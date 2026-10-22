@@ -21,7 +21,7 @@ const BAL = {
   pumpFloor: 12,            // a squad smaller than this pumps proportionally slower; bigger never pumps faster
   flipAt: 0.55,             // share of a red band's steps you must pour in before it flips
   bossHitCap: 0.35,         // one boss strike deletes at most this share of the squad
-  shotsPerSec: [0, 0.7, 1.0, 1.2, 1.3], // enemy return fire across the crowd, by stage
+  shotsPerSec: [0, 0.5, 0.6, 0.7, 0.75], // enemy return fire across the crowd, by stage
   // gunfire: a soldier is ~1 unit tall; tracers are 1.2 long, fly 25 u/s, despawn after 30
   fireRate: 3, shotSpeed: 25, shotRange: 30,
   // the boss walks toward you all level: it starts bossD0 + bossGap ahead and meets you at 100%
@@ -156,9 +156,11 @@ function parPath(L) {
   out.push(N);
   return out;
 }
+// early gates add (+3/+5/+8), then two doublings build the army by mid-level, then x1.6 to the boss
 function parBest(N, i, st) {
   if (i === 0) return N + 5;
-  if (N < 8) return N + (N < 4 ? 5 : 8);
+  if (i === 1 || N < 8) return N + 8;
+  if (i <= 3) return N * 2;
   return N * BAL.growth[st - 1];
 }
 

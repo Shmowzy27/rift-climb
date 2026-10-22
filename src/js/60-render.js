@@ -9,7 +9,7 @@ const SP = {}, SP2 = {}; // scratch projection results (no per-frame allocation)
 const C_WHITE = new THREE.Color(1, 1, 1), C_FLASH = new THREE.Color(2.4, 2.4, 2.4), C_ELITE = new THREE.Color(1.25, 1.08, 0.55), C_TMP = new THREE.Color(), C_TMP2 = new THREE.Color();
 const C_GREEN = new THREE.Color(BAND_GREEN), C_RED = new THREE.Color(BAND_RED);
 const ARCH_TINT = { crossbow: 0xffd27a, staff: 0xff9a3d, blade: 0xbff6ff, beam: 0x2bf0ff };
-const ALL_KITS = ['disc', 'cart', 'buff', 'debuff', 'gold', 'ring', 'bar', 'barrel', 'band', 'bandWall', 'bandEdge', 'post', 'postCap', 'divider', 'haz', 'tdisc', 'tracer', 'trail', 'orb', 'slash', 'stream', 'etracer', 'part', 'casing', 'mflash', 'crown', 'defender', 'platform'];
+const ALL_KITS = ['disc', 'cart', 'buff', 'debuff', 'gold', 'ring', 'bar', 'barrel', 'band', 'bandWall', 'bandEdge', 'post', 'postCap', 'divider', 'haz', 'tdisc', 'tracer', 'tglow', 'trail', 'orb', 'slash', 'etracer', 'part', 'casing', 'mflash', 'crown', 'platform'];
 
 function resize() {
   DPR = Math.min(3, window.devicePixelRatio || 1);
@@ -39,11 +39,12 @@ function render() {
     GFX.camera(G.P, G.camX, G.push ? easeInOut(G.push) : 0, G.shake, intro, b ? b.z : 0);
     const plat = b && b.platform ? { z0: G.P - 7, z1: b.z + 5 } : null;
     GFX.layoutWorld(G.stage, G.P, plat);
+    GFX.buildSquad(G.arch, skinById(Store.d.skin), G.weapon); // a new weapon level swaps the gun in every soldier's hands
     syncSquad(G.bodies, G.P, G.lead.x, G.phase === 'run', G.lead.vx);
     syncEnemies();
     syncProps();
     syncFx();
-    syncBase(rdt, plat);
+    syncBoss(rdt, plat);
   }
   GFX.R.render(GFX.scene, GFX.cam);
   if (!menu) {
@@ -59,23 +60,23 @@ function render() {
 function renderMenu() {
   const st = MENU.stage;
   MENU.P += 0.14;
-  if (!MENU.bodies) {
+  const extra = Store.d.plusOne || 0; // Kai alone, plus any +1 SOLDIER bought for the next level
+  if (!MENU.bodies || MENU.bodies.length !== extra) {
     MENU.bodies = [];
-    let row = 1, i = 0;
-    while (i < 10) { const inRow = Math.min(row + 1, 10 - i); for (let k = 0; k < inRow; k++, i++) MENU.bodies.push({ ox: (k - (inRow - 1) / 2) * 0.46, oz: -row * 0.42 - 0.2, row, x: 0, ph: rand(0, TAU), pop: 0 }); row++; }
+    for (let i = 0; i < extra; i++) MENU.bodies.push({ ox: ((i % 3) - 1) * 0.5, oz: -(Math.floor(i / 3) + 1) * 0.5 - 0.2, row: 1, x: 0, ph: rand(0, TAU), pop: 0 });
   }
   const lx = Math.sin(G.t * 0.4) * 1.2;
   for (const b of MENU.bodies) { b.x = lx + b.ox; b.ph += 0.19; }
   GFX.setStage(st);
   G.arch = STAGES[st - 1].arch || (Store.d.run && Store.d.run.arch) || 'crossbow';
-  GFX.buildSquad(G.arch, skinById(Store.d.skin));
+  GFX.buildSquad(G.arch, skinById(Store.d.skin), (Store.d.run && Store.d.run.weapon) || 1);
   GFX.camera(MENU.P - 6, lx * 0.4, 0, 0, 0, 0);
   GFX.layoutWorld(st, MENU.P, null);
   syncSquad(MENU.bodies, MENU.P, lx, true, Math.cos(G.t * 0.4));
   GFX.k.blob.end();
   for (const k of Object.values(GFX.enemyKits)) { k.begin(); k.end(); }
   for (const n of ALL_KITS) { GFX.k[n].begin(); GFX.k[n].end(); }
-  if (GFX.base) GFX.base.visible = false;
+  for (const k of GFX.k.crate) { k.begin(); k.end(); }
   if (GFX.rig) { GFX.rig.root.visible = false; if (GFX.rig.twin) GFX.rig.twin.visible = false; }
 }
 
@@ -107,9 +108,11 @@ function syncSquad(bodies, P, lx, running, vx) {
   K.leg.add(lx + 0.12, 0.5 + kb, P + 0.3, 0, 1.18, 1.18, 1.18, null, -ks);
   K.blob.add(lx, 0.02, P + 0.3, 0, 1.1, 1, 1.1);
   K.body.end(); K.leg.end(); K.kai.end(); if (K.after) K.after.end();
-  // blob stays open: enemies add their shadows too (closed in syncBase)
+  // blob stays open: enemies add their shadows too (closed in syncBoss)
 }
 
+// the boss walks the road toward you; whatever is still behind it stays hidden until it passes
+function farZ() { const b = G.boss; return b && !b.dead && !G.endless ? b.z + 1.5 : G.P + 130; }
 function syncEnemies() {
   const K = GFX.k;
   for (const k of Object.values(GFX.enemyKits)) k.begin();
@@ -135,9 +138,9 @@ function syncEnemies() {
 }
 
 function syncProps() {
-  const K = GFX.k, P = G.P;
+  const K = GFX.k, P = G.P, fz = farZ();
   K.disc.begin(); K.cart.begin();
-  for (const c of G.coins) if (c.z - P < 80) K.disc.add(c.x, 1.05 + Math.sin(G.t * 3 + c.z) * 0.08, c.z, Math.sin(c.spin) * 0.35, 1.15);
+  for (const c of G.coins) if (c.z - P < 80 && c.z < fz) K.disc.add(c.x, 1.05 + Math.sin(G.t * 3 + c.z) * 0.08, c.z, Math.sin(c.spin) * 0.35, 1.15);
   for (const c of G.carts) if (!c.taken && c.z - P < 90) K.cart.add(c.x, 0, c.z, c.x > 0 ? -0.3 : 0.3, 1.2);
   K.disc.end(); K.cart.end();
   K.buff.begin(); K.debuff.begin(); K.gold.begin(); K.ring.begin();
@@ -151,22 +154,31 @@ function syncProps() {
   }
   K.buff.end(); K.debuff.end(); K.gold.end();
   K.bar.begin();
-  for (const b of G.bars) if (!b.dead && b.z - P < 95) K.bar.add((b.x0 + b.x1) / 2, 0, b.z, 0, b.x1 - b.x0, 1, 1, b.flash > 0 ? C_FLASH : C_WHITE);
+  for (const b of G.bars) if (!b.dead && b.z < fz) K.bar.add((b.x0 + b.x1) / 2, 0, b.z, 0, b.x1 - b.x0, 1, 1, b.flash > 0 ? C_FLASH : C_WHITE);
   K.bar.end();
   // barrels: red drums with a pulsing danger ring the size of their blast
   K.barrel.begin();
   for (const br of G.barrels) {
-    if (br.dead || br.z - P > 95) continue;
+    if (br.dead || br.z > fz) continue;
     const hot = 1 - br.hp / br.max;
     K.barrel.add(br.x, 0, br.z, 0, 1.15, 1.15, 1.15, br.flash > 0 ? C_FLASH : C_TMP.setRGB(1 + hot * 0.6, 1, 1));
     const pulse = 0.85 + 0.15 * Math.sin(G.t * (8 + hot * 14));
     K.ring.add(br.x, 0.05, br.z, 0, br.blast * pulse, 1, br.blast * pulse, 0xff3b2a);
   }
   K.barrel.end();
+  // weapon crates: tires, a steel drum, a strapped crate. They shake when hit.
+  for (const k of K.crate) k.begin();
+  for (const c of G.crates) {
+    if (c.dead || c.z > fz) continue;
+    const j = c.flash > 0 ? rand(-0.05, 0.05) : 0;
+    K.crate[c.rank].add(c.x + j, 0, c.z, 0.15, 1, 1, 1, c.flash > 0 ? C_FLASH : C_WHITE);
+    K.ring.add(c.x, 0.04, c.z, 0, 1.2, 1, 1.2, 0xffd23d);
+  }
+  for (const k of K.crate) k.end();
   // gate bands: translucent green/red floor zones across the road, posts at their edges
   K.band.begin(); K.bandWall.begin(); K.bandEdge.begin(); K.post.begin(); K.postCap.begin();
   for (const s of G.sets) {
-    if (s.done || s.z - P > 120 || s.z < P - 4) continue;
+    if (s.done || s.z > fz || s.z < P - 4) continue;
     for (let i = 0; i < s.bands.length; i++) {
       const b = s.bands[i], w = b.x1 - b.x0, cx = (b.x0 + b.x1) / 2;
       const base = b.red ? C_RED : C_GREEN;
@@ -197,8 +209,6 @@ function syncProps() {
   K.haz.begin(); K.tdisc.begin();
   const zone = (x0, x1, z0, z1, col, k) => K.haz.add((x0 + x1) / 2, 0.045, (z0 + z1) / 2, 0, x1 - x0, 1, z1 - z0, C_TMP.setHex(col).multiplyScalar(k));
   for (const h of G.hazards) zone(h.x0, h.x1, P - 3, P + (h.kind === 'corrupt' ? 30 : 6), h.kind === 'fire' ? 0xff6a1a : 0x965aff, h.active ? 1 + Math.sin(G.t * 20) * 0.15 : 0.5 + 0.5 * Math.abs(Math.sin(G.t * 10)));
-  const B = G.base;
-  if (B && B.zone && !B.dead) zone(B.zone[0], B.zone[1], P - 4, P + 4, 0xff2846, 0.5 + 0.5 * Math.abs(Math.sin(G.t * 12)) + 0.5 * (1 - B.wind / (B.windMax || 1)));
   const a = G.boss && G.boss.atk;
   if (a) {
     const k = 1 - a.wind / a.max, blink = 0.5 + 0.5 * Math.abs(Math.sin(G.t * (6 + k * 18))) + k * 0.6;
@@ -213,79 +223,68 @@ function syncProps() {
   K.ring.end();
 }
 
+// Gunfire: one tracer per shot in flight (the logic caps the guns at 60; past that each of the 60
+// stands for N/60 soldiers and draws wider and brighter). Core + glow + a fading trail behind it.
 function syncFx() {
   const K = GFX.k;
-  K.tracer.begin(); K.trail.begin(); K.orb.begin(); K.slash.begin(); K.stream.begin(); K.etracer.begin(); K.part.begin(); K.casing.begin(); K.mflash.begin();
+  K.tracer.begin(); K.tglow.begin(); K.trail.begin(); K.orb.begin(); K.slash.begin(); K.etracer.begin(); K.part.begin(); K.casing.begin(); K.mflash.begin();
   const tint = ARCH_TINT[G.arch] || 0xffffff;
+  let live = 0;
   for (let i = 0; i < SHOTS.n; i++) {
     const s = SHOTS.a[i];
     if (!s.vis) continue;
-    if (s.kind === 1) { K.orb.add(s.x, s.y, s.z, s.t * 6, 1.25 + Math.sin(s.t * 30) * 0.15); K.trail.add(s.x, s.y, s.z - 0.6, 0, 3, 3, 1.2, tint); continue; }
-    if (s.kind === 2) { K.slash.add(s.x, s.y, s.z, Math.PI, 1.1 + s.t * 0.8, 1, 1.1, tint); continue; }
-    const len = Math.min(s.t * s.vz, s.kind === 3 ? 2.6 : 1.5);
-    K.tracer.add(s.x, s.y, s.z, 0, 1.6, 1.6, s.kind === 3 ? 2.2 : 1.6);
-    K.trail.add(s.x, s.y, s.z - len / 2 - 0.2, 0, s.kind === 3 ? 1.6 : 2, s.kind === 3 ? 1.6 : 2, len, tint);
+    const k = s.k || 1, wk = Math.min(2.4, Math.sqrt(k)) * (DEBUG_TRACER || 1), bright = Math.min(1.9, 0.75 + 0.25 * k);
+    const ry = Math.atan2(-s.vx, s.vz), lk = DEBUG_TRACER || 1;
+    if (s.kind === 1) K.orb.add(s.x, s.y, s.z, s.t * 6, 1.25 + Math.sin(s.t * 30) * 0.15);
+    if (s.kind === 2) K.slash.add(s.x, s.y, s.z, Math.PI, 1.1 + s.t * 0.8, 1, 1.1, tint);
+    C_TMP.setRGB(bright, bright, bright);
+    K.tracer.add(s.x, s.y, s.z, ry, wk, wk, lk, C_TMP);
+    K.tglow.add(s.x, s.y, s.z, ry, wk, wk, lk, C_TMP);
+    const trav = Math.max(0.2, s.t * s.vz), len = Math.min(3.0 * lk, trav);
+    K.trail.add(s.x - s.vx * len / s.vz * 0.5, s.y, s.z - 0.6 * lk - len / 2, ry, wk, wk, len / 3.0, C_TMP);
+    live++;
   }
-  // past 25 guns the front rank pours one thick stream: width and brightness grow with the count
-  if (G.N > BAL.gunCap && (G.phase === 'run' || (G.phase === 'assault' && G.bossIntro <= 0)) && G.mode === 'play') {
-    const k = Math.sqrt(G.N / BAL.gunCap), z0 = G.P + 0.7, z1 = Math.max(z0 + 2, Math.min(G.streamEnd || z0 + reach(), G.P + reach()));
-    // rails of fire across the front rank: thicker and brighter as the count climbs
-    const w = Math.min(2 * formHalf(), 4.2) * 0.8, rails = Math.min(6, 2 + Math.floor(k * 1.4)), th = 0.07 + 0.035 * k;
-    for (let i = 0; i < rails; i++) {
-      const x = G.lead.x + (rails === 1 ? 0 : (i / (rails - 1) - 0.5) * w), fl = 0.8 + Math.random() * 0.4;
-      K.stream.add(x, 1.0, (z0 + z1) / 2, 0, th * 2.6 * fl, th * 2.6 * fl, z1 - z0, C_TMP.setHex(tint).multiplyScalar(0.45 + 0.08 * k));
-      K.stream.add(x, 1.0, (z0 + z1) / 2, 0, th * fl, th * fl, z1 - z0, C_TMP.setRGB(1.5, 1.5, 1.4));
-    }
-  }
+  HUD.liveTracers = live;
   for (let i = 0; i < ESHOTS.n; i++) { const s = ESHOTS.a[i]; K.etracer.add(s.x, s.y, s.z, Math.atan2(-s.vx, -s.vz), 1.5); }
   for (let i = 0; i < FX.n; i++) {
     const p = FX.a[i];
     const a = clamp(p.life / p.max, 0, 1);
-    if (p.kind === FXK.flash) { K.mflash.add(p.x, p.y, p.z, Math.random() * 3, p.size * 1.5, p.size * 1.5, p.size * 2.2, p.col); continue; }
+    // muzzle flash: 0.5 units, random rotation, exactly two rendered frames
+    if (p.kind === FXK.flash) { if (p.frames-- > 0) K.mflash.add(p.x, p.y, p.z, 0, p.size, p.size, p.size, p.col, 0, p.rot); continue; }
     if (p.kind === FXK.casing) { K.casing.add(p.x, p.y, p.z, p.life * 20, 1, 1, 1, null, p.life * 15); continue; }
-    const s = p.kind === FXK.puff ? p.size * (1.8 - a) : p.size * (0.4 + a * 0.8);
-    K.part.add(p.x, p.y, p.z, p.life * 9, s, s, s, p.col);
+    const sz = p.kind === FXK.puff ? p.size * (1.8 - a) : p.size * (0.4 + a * 0.8);
+    K.part.add(p.x, p.y, p.z, p.life * 9, sz, sz, sz, p.col);
   }
-  K.tracer.end(); K.trail.end(); K.orb.end(); K.slash.end(); K.stream.end(); K.etracer.end(); K.part.end(); K.casing.end();
-  // muzzle flashes stay open for the base defenders (closed in syncBase)
+  K.tracer.end(); K.tglow.end(); K.trail.end(); K.orb.end(); K.slash.end(); K.etracer.end(); K.part.end(); K.casing.end(); K.mflash.end();
 }
+let DEBUG_TRACER = 0; // set to 5 from the console to draw every tracer 5x (diagnostic)
 
 const BOSS_TINT = [new THREE.Color(1, 1, 1), new THREE.Color(1.15, 0.85, 0.8), new THREE.Color(1.3, 0.62, 0.6)];
-function syncBase(dt, plat) {
+const C_VAR = new THREE.Color();
+// The boss is on the road from the first second: far off, huge, walking at you with a heavy gait.
+// Non-stage levels draw a recoloured, smaller spawn of the stage boss.
+function syncBoss(dt, plat) {
   const K = GFX.k;
-  K.defender.begin(); K.platform.begin();
-  const B = G.base;
-  const baseZ = B ? B.z : G.baseZ;
-  const bossLevel = isStageBoss(G.level) && !G.endless;
-  if (GFX.base) {
-    const show = !bossLevel && !G.endless && !(B && B.dead) && baseZ - G.P < 170;
-    GFX.base.visible = show;
-    if (show) {
-      GFX.base.position.set(B && B.shake ? rand(-1, 1) * B.shake * 0.03 : 0, 0, -baseZ);
-      for (let i = 0; i < 8; i++) {
-        const x = -4.9 + i * 1.4;
-        K.defender.add(x, 3.8, baseZ - 0.1, Math.PI);
-        if (B && !B.dead && ((Math.floor(G.t * 7) + i) % 5 === 0)) K.mflash.add(x, 4.3, baseZ + 0.4, 0, 1.4, 1.4, 1.4, 0xffb02e);
-      }
-    }
-  }
+  K.platform.begin();
   const b = G.boss;
-  if (b && B && !B.dead) {
+  if (b && !b.dead) {
     const rig = GFX.bossRig(b.kind, b.arch);
     rig.root.visible = true;
     while (rig.broken < b.phase) { rig.broken++; GFX.breakOff(rig, rig.broken); }
     GFX.tickFalling(rig, dt);
-    const ph = Math.min(2, b.phase);
-    rig.mat.color.copy(BOSS_TINT[ph]);
+    rig.mat.color.copy(BOSS_TINT[Math.min(2, b.phase)]);
+    if (b.variant) rig.mat.color.multiply(C_VAR.setHSL(b.hue, 0.55, 0.62).lerp(C_WHITE, 0.35));
     if (b.flash > 0) rig.mat.color.multiplyScalar(1.6);
-    // heavy idle: breathe, sway, and lean into the telegraph
+    const walking = G.phase === 'run' || G.phase === 'intro';
+    const step = walking ? b.walk * 2.4 : 0, stomp = walking ? Math.abs(Math.sin(step)) : 0;
     const breathe = 1 + Math.sin(G.t * 1.8) * 0.025, lean = b.atk ? (1 - b.atk.wind / b.atk.max) : 0;
     const place = (root, body, x, sc) => {
+      sc *= b.scale;
       root.position.set(x + (b.recoil ? rand(-0.08, 0.08) * b.recoil : 0), 0, -b.z);
       root.scale.set(sc * breathe, sc * (b.kind === 'brine' ? 1 + Math.sin(G.t * 2.2) * 0.06 : breathe), sc * breathe);
-      body.rotation.z = Math.sin(G.t * 0.7) * 0.04;
-      body.rotation.x = -lean * 0.18 + b.recoil * 0.12;
-      body.position.y = Math.sin(G.t * 1.4) * 0.1;
+      body.rotation.z = walking ? Math.sin(step) * 0.07 : Math.sin(G.t * 0.7) * 0.04; // heavy side-to-side as it walks
+      body.rotation.x = -lean * 0.18 + b.recoil * 0.12 + (walking ? -0.05 : 0);
+      body.position.y = walking ? (1 - stomp) * 0.35 : Math.sin(G.t * 1.4) * 0.1;
     };
     if (b.split && rig.twin) { place(rig.root, rig.body, b.x - 2.6, 0.62); rig.twin.visible = true; place(rig.twin, rig.twinBody, b.x + 2.6, 0.62); }
     else { place(rig.root, rig.body, b.x, 1); if (rig.twin) rig.twin.visible = false; }
@@ -295,7 +294,7 @@ function syncBase(dt, plat) {
     for (const a in rig.weapons) { rig.weapons[a].visible = a === b.arch; swing(rig.weapons[a]); }
     if (plat) K.platform.add(0, 0, (plat.z0 + plat.z1) / 2, 0, 7.5, 3, (plat.z1 - plat.z0) / 2 + 2);
   } else if (GFX.rig) { GFX.rig.root.visible = false; if (GFX.rig.twin) GFX.rig.twin.visible = false; GFX.tickFalling(GFX.rig, dt); }
-  K.defender.end(); K.mflash.end(); K.platform.end();
+  K.platform.end();
   K.blob.end();
 }
 
@@ -303,10 +302,10 @@ function syncBase(dt, plat) {
 // Overlay text in world space
 // ---------------------------------------------------------------------------
 function drawWorldLabels(c) {
-  const P = G.P;
+  const P = G.P, fz = farZ();
   // band values: floating large above each band; they tick while you shoot them
   for (const s of G.sets) {
-    if (s.done || s.z - P > 95 || s.z < P - 1) continue;
+    if (s.done || s.z - P > 95 || s.z > fz || s.z < P - 1) continue;
     const vis = clamp((95 - (s.z - P)) / 20, 0, 1);
     for (const b of s.bands) {
       const cx = (b.x0 + b.x1) / 2;
@@ -352,15 +351,15 @@ function drawWorldLabels(c) {
     shown++;
     bigText(c, fmtHP(Math.ceil(e.hp)), q.x, q.y, clamp(q.s * 0.36 * Math.sqrt(sc), 9, 24), e.elite ? '#ffd23d' : e.rival ? '#9ff6ff' : '#ffffff');
   }
-  // base HP: big and red above the compound; the number itself is the drama
-  const B = G.base;
-  if (!G.endless && !isStageBoss(G.level) && !(B && B.dead) && (B || G.baseZ - P < 95)) {
-    const q = proj(0, B ? B.z : G.baseZ, 7.2);
-    if (q.vis) {
-      const hp = B ? Math.max(0, B.hp) : G.baseMax;
-      const px = clamp(q.s * 1.9, 22, 84) * (1 + (B && B.shake ? B.shake * 0.012 : 0));
-      bigText(c, fmtHP(Math.ceil(hp)), q.x, q.y, px, B && B.hp / B.max < 0.25 ? '#ff7a8a' : '#ff3b4f', { maxW: V.w - 20, lw: Math.max(6, px * 0.16) });
-    }
+  // weapon crates: the HP printed large, the gun it holds floating above with its level
+  for (const cr of G.crates) {
+    if (cr.dead || cr.z > fz || cr.z - P > 75 || cr.z < P - 1) continue;
+    const q = proj(cr.x, cr.z, 1.85);
+    if (!q.vis) continue;
+    const px = clamp(q.s * 0.75, 14, 46);
+    bigText(c, fmtInt(Math.ceil(Math.max(0, cr.hp))), q.x, q.y, px, cr.flash > 0 ? '#ffffff' : '#ffe58a', { lw: Math.max(4, px * 0.18) });
+    const qi = proj(cr.x, cr.z, 3.2 + Math.sin(G.t * 3 + cr.z) * 0.15, SP2);
+    if (qi.vis) gunIcon(c, qi.x, qi.y, clamp(q.s * 0.5, 10, 30), cr.tier, cr.tier > G.weapon);
   }
   // squad count, large, above the formation
   const top = proj(G.lead.x, P + 0.6, 2.5);
@@ -402,28 +401,36 @@ function drawHUD(c, t) {
   c.globalAlpha = 1;
   HUD.gemX = V.w - 30; HUD.gemY = y;
   const bx = p.x + p.w + 14, bw = cx - 34 - bx, by = y - 6;
-  if (G.phase === 'run' || !G.base) {
-    const k = G.endless ? 0 : clamp(G.P / G.Lr, 0, 1);
-    cel(c, P.rr(bx, by, bw, 12, 6), '#14141f', null, null, 2.5);
-    flat(c, P.rr(bx + 2, by + 2, Math.max(8, (bw - 4) * k), 8, 4), STAGES[G.stage - 1].pal.accent, 0);
-    line(c, bx + bw, by - 10, bx + bw, by + 12, INK, 3);
-    flat(c, P.poly([bx + bw, by - 10, bx + bw + 14, by - 5, bx + bw, by]), '#ff3b5c', 2);
-    bigText(c, G.endless ? fmtInt(G.P) + 'm' : Math.floor(k * 100) + '%', bx + bw / 2, by + 24, 14, '#ffffff', { lw: 3 });
-  } else {
-    const B = G.base, k = clamp(B.timer / G.timerMax, 0, 1), hot = B.timer < 5;
-    cel(c, P.rr(bx, by - 2, bw, 16, 8), '#14141f', null, null, 2.5);
-    flat(c, P.rr(bx + 2, by, Math.max(8, (bw - 4) * k), 12, 6), hot ? '#ff3b5c' : '#ffd23d', 0);
-    bigText(c, Math.max(0, B.timer).toFixed(1), bx + bw / 2, by + 28, hot ? 26 + Math.sin(t * 20) * 2 : 22, hot ? '#ff9aa9' : '#ffffff');
-  }
-  // boss: an HP bar and the raw HP number above it
-  if (G.boss && G.base && !G.base.dead && !G.nameCard) {
-    const B = G.base, k = clamp(B.hp / B.max, 0, 1);
-    const w = V.w - 40, x = 20, yy = by + 84;
+  // progress: the boss's death and 100% are the same moment, so it holds at 99% until it falls
+  const b = G.boss, bossDead = b && b.dead;
+  const k = G.endless ? 0 : bossDead ? 1 : Math.min(0.99, G.P / G.Lr);
+  cel(c, P.rr(bx, by, bw, 12, 6), '#14141f', null, null, 2.5);
+  flat(c, P.rr(bx + 2, by + 2, Math.max(8, (bw - 4) * k), 8, 4), STAGES[G.stage - 1].pal.accent, 0);
+  line(c, bx + bw, by - 10, bx + bw, by + 12, INK, 3);
+  flat(c, P.poly([bx + bw, by - 10, bx + bw + 14, by - 5, bx + bw, by]), '#ff3b5c', 2);
+  bigText(c, G.endless ? fmtInt(G.P) + 'm' : Math.floor(k * 100) + '%', bx + bw / 2, by + 24, 14, '#ffffff', { lw: 3 });
+  // weapon level, at the left edge under pause
+  const wy = p.y + p.h + 26;
+  gunIcon(c, p.x + 16, wy, 14, G.weapon, false);
+  bigText(c, 'Lv ' + G.weapon, p.x + 34, wy, 20, '#ffe58a', { align: 'left', lw: 4 });
+  // the boss: HP bar and raw HP pinned near the top for the whole level, while it is still far off
+  if (b && !b.dead && !G.nameCard && !G.endless) {
+    const hk = clamp(b.hp / b.max, 0, 1);
+    const w = V.w - 40, x = 20, yy = by + 62;
     cel(c, P.rr(x, yy, w, 14, 7), '#14141f', null, null, 2.5);
-    flat(c, P.rr(x + 2, yy + 2, Math.max(6, (w - 4) * k), 10, 5), k > 2 / 3 ? '#ff3b5c' : k > 1 / 3 ? '#ff7a2e' : '#ffd23d', 0);
+    flat(c, P.rr(x + 2, yy + 2, Math.max(6, (w - 4) * hk), 10, 5), hk > 2 / 3 ? '#ff3b5c' : hk > 1 / 3 ? '#ff7a2e' : '#ffd23d', 0);
     for (const m of [1 / 3, 2 / 3]) { c.fillStyle = INK; c.fillRect(x + w * m - 1, yy + 1, 2, 12); }
-    bigText(c, fmtHP(Math.ceil(B.hp)), V.cx, yy - 16, 26, "#ff6a7a", { lw: 5 });
+    bigText(c, fmtHP(Math.ceil(Math.max(0, b.hp))), V.cx, yy - 14, 24, '#ff6a7a', { lw: 5 });
   }
+}
+// a small side-on gun, longer and bulkier with the level; gold when it is an upgrade
+function gunIcon(c, x, y, s, lv, up) {
+  const len = s * (1.3 + lv * 0.09), th = s * (0.28 + lv * 0.02);
+  c.save(); c.translate(x - len / 2, y);
+  c.fillStyle = INK; c.fillRect(-2, -th / 2 - 2, len + 4, th + 4); c.fillRect(len * 0.18 - 2, th / 2 - 2, th * 0.9 + 4, th * 1.3 + 4);
+  c.fillStyle = up ? '#ffd23d' : '#e6e8f2'; c.fillRect(0, -th / 2, len, th); c.fillRect(len * 0.18, th / 2, th * 0.9, th * 1.3);
+  if (lv >= 3) { c.fillStyle = INK; c.fillRect(len * 0.5 - 2, th / 2 - 2, th * 0.7 + 4, th * 1.5 + 4); c.fillStyle = up ? '#ffb02e' : '#b9bccb'; c.fillRect(len * 0.5, th / 2, th * 0.7, th * 1.5); }
+  c.restore();
 }
 
 function drawOverlays(c, t) {

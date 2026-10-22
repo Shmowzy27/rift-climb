@@ -26,10 +26,10 @@ const Store = {
   d: null,
   defaults() {
     return {
-      v: 2, gems: 0, coins: 0, up: { rate: 0, dmg: 0, rev: 0 }, plusOne: 0, shop: {}, skinsOwned: ['conscript'], skin: 'conscript',
+      v: 3, gems: 0, coins: 0, up: { rate: 0, dmg: 0, rev: 0 }, plusOne: 0, shop: {}, skinsOwned: ['conscript'], skin: 'conscript',
       settings: { sound: true, music: true, haptics: true },
       story: [], best: 0, bestScore: 0, runsDone: 0, loop: 0, records: {}, tut: {}, endlessBest: 0, endless: false,
-      run: null, // { level, relics, loop, arch }
+      run: null, // { level, relics, loop, arch, weapon }
     };
   },
   load() {
@@ -43,6 +43,7 @@ const Store = {
         d.settings = Object.assign(this.defaults().settings, p.settings || {});
         d.up = Object.assign(this.defaults().up, p.up || {});
         this.migrate(d);
+        this.migrate3(d);
       } catch (e) { /* corrupted save: start clean */ }
     }
     this.d = d;
@@ -68,6 +69,14 @@ const Store = {
         delete d.run.coins; delete d.run.cards;
       }
     }
+  },
+  // v2 -> v3: every level opens on Kai alone. A banked +1 SOLDIER from an older build is refunded,
+  // never carried into a level; the run's weapon level starts at 1.
+  migrate3(d) {
+    if ((d.v || 1) >= 3) return;
+    d.v = 3;
+    if (d.plusOne) { d.gems += d.plusOne; d.plusOne = 0; }
+    if (d.run && !d.run.weapon) d.run.weapon = 1;
   },
   save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.d)); } catch (e) { /* storage full or blocked */ } },
   reset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} this.d = this.defaults(); this.save(); },

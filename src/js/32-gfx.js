@@ -75,6 +75,70 @@ function hullGeo(geo, t) {
   return g;
 }
 
+// Two quads crossed along the z axis (one flat, one upright) so a streak reads from any camera
+// angle without per-frame billboarding. Vertex colour runs from head (z = +len/2) to tail (fade).
+function crossQuad(len, w, head, tail) {
+  const pos = [], col = [], h = len / 2, a = w / 2;
+  const quad = (p0, p1, p2, p3) => { for (const q of [p0, p1, p2, p0, p2, p3]) pos.push(...q); };
+  quad([-a, 0, -h], [a, 0, -h], [a, 0, h], [-a, 0, h]);
+  quad([0, -a, -h], [0, a, -h], [0, a, h], [0, -a, h]);
+  for (let i = 0; i < pos.length; i += 3) { const k = (pos[i + 2] + h) / len; for (let c = 0; c < 3; c++) col.push(tail[c] + (head[c] - tail[c]) * k); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+// a four-point flash star facing the camera, 1 unit across
+function starQuad() {
+  const pos = [], col = [];
+  for (let i = 0; i < 8; i++) {
+    const a0 = i / 8 * TAU, a1 = (i + 1) / 8 * TAU, r0 = i % 2 ? 0.16 : 0.5, r1 = i % 2 ? 0.5 : 0.16;
+    pos.push(0, 0, 0, Math.cos(a0) * r0, Math.sin(a0) * r0, 0, Math.cos(a1) * r1, Math.sin(a1) * r1, 0);
+    col.push(1, 1, 1, 1, 0.85, 0.45, 1, 0.85, 0.45);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+// The gun every soldier carries, by weapon level (1 bolt rifle .. 10 heavy automatic): longer,
+// bulkier, more barrels and a hotter accent as it climbs. Held at the right hip, pointing ahead.
+function gunParts(lv, x, y, z, sc) {
+  sc = sc || 1;
+  const metal = lv >= 7 ? '#3a3f4c' : '#4a4f5a', dark = '#1c1d24', wood = '#7a5232';
+  const acc = ['#c9ced8', '#c9ced8', '#9fe6ff', '#9fe6ff', '#ffd23d', '#ffd23d', '#ff9a3d', '#ff9a3d', '#ff3b5c', '#ff3b5c'][lv - 1];
+  const len = (0.42 + 0.035 * lv) * sc, th = (0.06 + 0.009 * lv) * sc;
+  const out = [part(GB.box(th, th * 1.3, len), metal, [x, y, z - len / 2])];
+  out.push(part(GB.box(th * 0.9, th * 1.6, len * 0.32), lv <= 2 ? wood : dark, [x, y - th * 0.4, z + len * 0.12])); // stock
+  const barrels = lv >= 8 ? 3 : lv >= 5 ? 2 : 1;
+  for (let i = 0; i < barrels; i++) out.push(part(GB.cyl(th * 0.28, th * 0.28, len * 0.55, 5), dark, [x + (i - (barrels - 1) / 2) * th * 0.6, y + th * 0.3, z - len - len * 0.2], [Math.PI / 2, 0, 0]));
+  if (lv >= 3) out.push(part(GB.box(th * 0.7, th * 1.8, th * 1.2), dark, [x, y - th * 1.3, z - len * 0.45])); // magazine
+  if (lv >= 6) out.push(part(GB.cyl(th * 0.35, th * 0.35, len * 0.35, 6), dark, [x, y + th * 1.1, z - len * 0.5], [Math.PI / 2, 0, 0])); // scope
+  if (lv >= 9) out.push(part(GB.cyl(th * 1.1, th * 1.1, len * 0.3, 7), metal, [x, y, z - len * 0.75], [Math.PI / 2, 0, 0])); // rotary housing
+  out.push(part(GB.box(th * 1.05, th * 0.35, len * 0.6), acc, [x, y + th * 0.75, z - len * 0.45])); // the accent stripe that says which gun it is
+  return out;
+}
+// Weapon crates by rank: a tire stack (easy), a steel drum, a strapped crate (the good stuff)
+function crateParts(rank) {
+  if (rank === 0) {
+    const out = [];
+    for (let i = 0; i < 3; i++) out.push(part(GB.tor(0.55, 0.22, 6, 14), '#1e1e24', [0, 0.22 + i * 0.42, 0], [Math.PI / 2, 0, 0]));
+    out.push(part(GB.cyl(0.36, 0.36, 1.2, 10), '#3a3a44', [0, 0.62, 0]));
+    return out;
+  }
+  if (rank === 1) return [
+    part(GB.cyl(0.62, 0.62, 1.5, 14), '#3f6fa8', [0, 0.75, 0]), part(GB.cyl(0.64, 0.64, 0.12, 14), '#c9ced8', [0, 0.35, 0]),
+    part(GB.cyl(0.64, 0.64, 0.12, 14), '#c9ced8', [0, 1.15, 0]), part(GB.cyl(0.5, 0.5, 0.06, 14), '#2a4a72', [0, 1.52, 0]),
+  ];
+  return [
+    part(GB.box(1.5, 1.4, 1.3), '#a8743a', [0, 0.7, 0]), part(GB.box(1.54, 0.16, 1.34), '#5a3a1a', [0, 0.25, 0]), part(GB.box(1.54, 0.16, 1.34), '#5a3a1a', [0, 1.15, 0]),
+    part(GB.box(0.16, 1.44, 1.34), '#c9ced8', [-0.5, 0.7, 0]), part(GB.box(0.16, 1.44, 1.34), '#c9ced8', [0.5, 0.7, 0]),
+    part(GB.box(0.5, 0.3, 0.05), '#ffd23d', [0, 0.75, 0.66]),
+  ];
+}
+
 // ---- instanced kit: a pool of one mesh type (+ its outline) -----------------
 class Kit {
   constructor(geo, cap, o) {
@@ -196,7 +260,7 @@ function legGeo(color) {
   const g = build([part(GB.box(0.12, 0.4, 0.14), color, [0, -0.2, 0]), part(GB.box(0.13, 0.07, 0.2), '#1a1720', [0, -0.4, -0.03])]);
   return g;
 }
-function kaiParts(arch) {
+function kaiParts(arch, lv) {
   const out = [
     part(GB.box(0.44, 0.44, 0.28), '#2b3350', [0, 0.65, 0]),
     part(GB.box(0.46, 0.07, 0.3), '#1a2036', [0, 0.45, 0]),
@@ -206,7 +270,8 @@ function kaiParts(arch) {
   ];
   for (let i = 0; i < 7; i++) { const a = i / 7 * TAU; out.push(part(GB.cone(0.06, 0.24, 4), '#1d1b26', [Math.cos(a) * 0.09, 1.1 + Math.abs(Math.sin(a)) * 0.03, Math.sin(a) * 0.09 + 0.02], [Math.sin(a) * 0.9 + 0.3, 0, -Math.cos(a) * 0.9])); }
   out.push(part(GB.cone(0.04, 0.26, 4), '#cfc6ff', [0.02, 1.2, 0.05], [0.4, 0, -0.2]));
-  out.push(part(GB.box(0.06, 0.06, 0.7), '#c9ced8', [0.25, 0.78, -0.3])); // a plain blade, held low
+  out.push(part(GB.box(0.06, 0.06, 0.7), '#c9ced8', [-0.25, 0.6, 0.1], [0.5, 0, 0])); // a plain blade, slung
+  out.push(...gunParts(lv || 1, 0.2, 0.74, -0.05));
   return out;
 }
 
@@ -421,24 +486,6 @@ function sceneryProtos(st) {
     ];
   }
 }
-function baseParts(st) {
-  const p = STAGES[st - 1].pal;
-  const stone = p.stone || '#6e6874', stone2 = p.stone2 || '#4a4550', acc = p.accent;
-  const out = [part(GB.box(12, 3.2, 1.4), stone, [0, 1.6, 0])];
-  for (let i = 0; i < 11; i++) out.push(part(GB.box(0.6, 0.6, 1.4), stone, [-5.5 + i * 1.1, 3.5, 0]));
-  out.push(part(GB.box(2.4, 2.6, 0.3), '#2a1a12', [0, 1.3, 0.62]));
-  for (const sd of [-1, 1]) {
-    out.push(part(GB.box(2, 6, 2), stone2, [sd * 6.6, 3, 0]));
-    if (st === 3) { out.push(part(GB.cone(1.9, 1.2, 4), '#2a2226', [sd * 6.6, 6.6, 0], [0, Math.PI / 4, 0])); }
-    else if (st === 2) { out.push(part(GB.cone(1.3, 3.2, 6), '#1a1012', [sd * 6.6, 7.6, 0])); out.push(part(GB.cone(0.5, 1.4, 5), p.lava, [sd * 6.6, 9.5, 0])); }
-    else if (st === 4) { out.push(part(GB.box(2.05, 0.3, 2.05), p.neonB, [sd * 6.6, 4.8, 0])); out.push(part(GB.box(0.25, 3, 0.25), p.neonA, [sd * 6.6, 7.2, 0])); }
-    else out.push(part(GB.cone(1.5, 2.2, 4), st === 5 ? '#0c0c14' : '#3a4a52', [sd * 6.6, 7.1, 0], [0, Math.PI / 4, 0]));
-    out.push(part(GB.box(0.06, 2.4, 0.06), '#2a2a2a', [sd * 3.2, 5.0, 0.3]));
-    out.push(part(GB.box(1.1, 0.8, 0.05), acc, [sd * 3.2 + 0.55, 5.8, 0.3]));
-  }
-  if (st === 3) out.push(part(GB.box(14, 0.5, 0.6), '#d8322a', [0, 4.6, 0.8]));
-  return out;
-}
 
 // ============================================================================
 const GFX = {
@@ -495,7 +542,7 @@ const GFX = {
     this.k = {};
     const K = this.k;
     const add = (o) => new THREE.MeshBasicMaterial(Object.assign({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }, o || {}));
-    K.blob = new Kit(new THREE.CircleGeometry(0.5, 12).rotateX(-Math.PI / 2), 260, { mat: this.shadowMat, outline: false, order: 1 });
+    K.blob = new Kit(new THREE.CircleGeometry(0.5, 12).rotateX(-Math.PI / 2), 480, { mat: this.shadowMat, outline: false, order: 1 });
     // coin discs: big upright gold discs, value printed on them by the overlay
     K.disc = new Kit(build([part(GB.cyl(0.62, 0.62, 0.12, 14), '#ffc83d', [0, 0, 0], [Math.PI / 2, 0, 0]), part(GB.cyl(0.48, 0.48, 0.14, 14), '#e8a21a', [0, 0, 0], [Math.PI / 2, 0, 0])]), 40, { ol: 0.04 });
     K.cart = new Kit(build([
@@ -527,18 +574,22 @@ const GFX = {
     K.divider = new Kit(build([part(GB.box(0.35, 1.4, 4), '#2a2a3a', [0, 0.7, 0]), part(GB.box(0.4, 0.12, 4.02), '#ffd23d', [0, 1.35, 0])]), 40, { ol: 0.04 });
     K.haz = new Kit(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), 16, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }), outline: false, color: true, order: 2 });
     K.tdisc = new Kit(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), 6, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }), outline: false, color: true, order: 2 });
-    // gunfire: tapered white-hot cones with a tinted trail; orbs; crescents; the stream
-    K.tracer = new Kit(build([part(GB.cone(0.075, 0.55, 5), '#ffffff', [0, 0, -0.2], [-Math.PI / 2, 0, 0]), part(GB.cyl(0.075, 0.03, 0.5, 5), '#fff6c8', [0, 0, 0.28], [Math.PI / 2, 0, 0])]), 500, { mat: add({ vertexColors: true }), outline: false });
-    K.trail = new Kit(new THREE.BoxGeometry(0.05, 0.05, 1), 500, { mat: add({ opacity: 0.55 }), outline: false, color: true });
+    // gunfire. A soldier is 1 unit tall; a tracer is a 1.2 x 0.12 white core inside a #FFD66B glow,
+    // with a trail 2.5x its length at 35% that fades to nothing. Additive, no depth writes, drawn
+    // after the road and the crowd so nothing hides it.
+    const tAdd = o => new THREE.MeshBasicMaterial(Object.assign({ color: 0xffffff, vertexColors: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }, o));
+    const gold = [1, 0.84, 0.42];
+    K.trail = new Kit(crossQuad(3.0, 0.12, gold, [0, 0, 0]), 900, { mat: tAdd({ opacity: 0.35 }), outline: false, color: true, order: 20 });
+    K.tglow = new Kit(crossQuad(1.5, 0.36, gold, gold), 900, { mat: tAdd({ opacity: 0.55 }), outline: false, color: true, order: 21 });
+    K.tracer = new Kit(crossQuad(1.2, 0.12, [1, 1, 1], [1, 1, 1]), 900, { mat: tAdd({}), outline: false, color: true, order: 22 });
     K.orb = new Kit(build([part(GB.ico(0.26, 0), '#ffb35a'), part(GB.ico(0.14, 0), '#ffffff')]), 160, { mat: this.addMat, outline: false });
     K.slash = new Kit(new THREE.TorusGeometry(0.8, 0.06, 3, 14, Math.PI).rotateX(-Math.PI / 2), 200, { mat: add({ opacity: 0.85 }), outline: false, color: true });
-    K.stream = new Kit(new THREE.BoxGeometry(1, 1, 1), 16, { mat: add({ opacity: 0.55 }), outline: false, color: true });
     K.etracer = new Kit(build([part(GB.cone(0.11, 0.6, 5), '#ff5a3a', [0, 0, 0.2], [Math.PI / 2, 0, 0]), part(GB.cyl(0.1, 0.03, 0.9, 5), '#ffb02e', [0, 0, -0.4], [Math.PI / 2, 0, 0])]), 100, { mat: add({ vertexColors: true }), outline: false });
-    K.part = new Kit(new THREE.OctahedronGeometry(0.5, 0), 900, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff }), outline: false, color: true });
+    K.part = new Kit(new THREE.OctahedronGeometry(0.5, 0), 1600, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff }), outline: false, color: true });
     K.casing = new Kit(new THREE.BoxGeometry(0.06, 0.06, 0.13), 200, { mat: new THREE.MeshBasicMaterial({ color: 0xe8b84a }), outline: false });
-    K.mflash = new Kit(new THREE.OctahedronGeometry(0.3, 0), 160, { mat: add(), outline: false, color: true });
+    K.mflash = new Kit(starQuad(), 240, { mat: tAdd({ opacity: 0.95 }), outline: false, color: true, order: 23 });
+    K.crate = [0, 1, 2].map(r => new Kit(build(crateParts(r)), 6, { ol: 0.05, color: true }));
     K.crown = new Kit(build([part(GB.cyl(0.22, 0.2, 0.12, 6), '#ffd23d'), ...[0, 1, 2, 3, 4].map(i => part(GB.cone(0.05, 0.16, 4), '#ffd23d', [Math.cos(i * 1.26) * 0.18, 0.12, Math.sin(i * 1.26) * 0.18]))]), 20, { ol: 0.03 });
-    K.defender = new Kit(build([part(GB.box(0.36, 0.5, 0.3), '#2a2030', [0, 0.25, 0]), part(GB.sph(0.16, 6, 4), '#2a2030', [0, 0.62, 0])]), 10, { ol: 0.03 });
     K.platform = new Kit(build([part(GB.cyl(1, 0.55, 1.4, 18), '#101018', [0, -0.72, 0]), part(GB.tor(1, 0.025, 3, 28), '#ffffff', [0, 0, 0], [Math.PI / 2, 0, 0])]), 1, { outline: false });
     this.enemyKits = {};
   },
@@ -547,25 +598,27 @@ const GFX = {
     if (k) return k;
     const geo = build(enemyParts(look));
     const crawl = look === 'crawler' || look === 'bigcrawler' || look === 'shieldcrawler' || look === 'twin';
-    k = new Kit(geo, 130, { ol: 0.05, color: true, olMat: crawl ? this.whiteLine : look === 'shade' ? this.cyanLine : this.outlineMat });
+    k = new Kit(geo, 220, { ol: 0.05, color: true, olMat: crawl ? this.whiteLine : look === 'shade' ? this.cyanLine : this.outlineMat });
     this.enemyKits[look] = k;
     return k;
   },
   // per level: squad meshes for the current archetype + skin, stage world, base
-  onLevel() { this.buildSquad(G.arch, skinById(Store.d.skin)); this.setStage(G.stage); this.buildBase(G.stage); this.dropBoss(); },
-  buildSquad(arch, skin) {
-    const key = arch + '|' + skin.id;
+  onLevel() { this.buildSquad(G.arch, skinById(Store.d.skin), G.weapon); this.setStage(G.stage); this.dropBoss(); },
+  // one body mesh per soldier up to 120 drawn; the gun in their hands follows the run's weapon level
+  buildSquad(arch, skin, lv) {
+    lv = lv || 1;
+    const key = arch + '|' + skin.id + '|' + lv;
     if (this.squadKey === key) return;
     this.squadKey = key;
     for (const n of ['body', 'leg', 'kai', 'after']) if (this.k[n]) { this.k[n].dispose(); this.k[n] = null; }
     const sp = soldierParts(arch, skin);
-    const geo = build(sp.parts, sp.post);
-    const asset = ASSETS.units[arch];
-    if (asset && asset.geo) this.k.body = new Kit(asset.geo, 64, { mat: asset.mat, ol: 0.03 * asset.scale });
-    else this.k.body = new Kit(geo, 64, { ol: 0.035, olMat: skin.fx.includes('glitch') ? this.cyanLine : this.outlineMat });
-    this.k.leg = new Kit(legGeo(skinPal(skin, arch).c2), 132, { ol: 0.03 });
-    this.k.kai = new Kit(build(kaiParts(arch)), 2, { ol: 0.04 });
-    if (skin.fx.includes('after')) this.k.after = new Kit(geo.clone(), 64, { mat: this.ghostMat, outline: false });
+    const geo = build(sp.parts.concat(gunParts(lv, 0.2, 0.72, -0.08)), sp.post);
+    const asset = ASSETS.units[arch]; // the player's own art, when they dropped some in assets/units/
+    if (asset && asset.geo) this.k.body = new Kit(asset.geo, 128, { mat: asset.mat, ol: 0.03 * asset.scale });
+    else this.k.body = new Kit(geo, 128, { ol: 0.035, olMat: skin.fx.includes('glitch') ? this.cyanLine : this.outlineMat });
+    this.k.leg = new Kit(legGeo(skinPal(skin, arch).c2), 264, { ol: 0.03 });
+    this.k.kai = new Kit(build(kaiParts(arch, lv)), 2, { ol: 0.04 });
+    if (skin.fx.includes('after')) this.k.after = new Kit(geo.clone(), 128, { mat: this.ghostMat, outline: false });
   },
   setStage(st) {
     if (this.stageKey === 'st' + st) return;
@@ -595,14 +648,6 @@ const GFX = {
     if (st === 3) K.torii = new Kit(build([part(GB.cyl(0.32, 0.36, 6.4, 8), STAGES[2].pal.torii, [-6.2, 3.2, 0]), part(GB.cyl(0.32, 0.36, 6.4, 8), STAGES[2].pal.torii, [6.2, 3.2, 0]), part(GB.box(15, 0.6, 0.8), STAGES[2].pal.toriiTop, [0, 6.6, 0]), part(GB.box(13.6, 0.4, 0.6), STAGES[2].pal.torii, [0, 5.4, 0]), part(GB.box(0.6, 1.2, 0.5), STAGES[2].pal.torii, [0, 6.0, 0])]), 8, { ol: 0.1 });
     K.sky = new Kit(new THREE.BoxGeometry(1, 1, 1), 26, { outline: false, mat: new THREE.MeshBasicMaterial({ color: new THREE.Color(st === 5 ? '#08080e' : shade(p.fog, -0.28)) }) });
     this.slotKey = '';
-  },
-  buildBase(st) {
-    if (this.base) { this.world.remove(this.base); this.base = null; }
-    const g = new THREE.Group();
-    const geo = build(baseParts(st));
-    g.add(new THREE.Mesh(geo, this.toon));
-    g.add(new THREE.Mesh(hullGeo(geo, 0.09), st === 5 ? this.whiteLine : this.outlineMat));
-    this.base = g; this.world.add(g);
   },
   dropBoss() {
     if (this.rig) { this.world.remove(this.rig.root); if (this.rig.twin) this.world.remove(this.rig.twin); for (const f of this.rig.falling) this.world.remove(f.g); }

@@ -125,7 +125,6 @@ const UI = {
       case 'sellrelic': this.sellRelic(arg, el); break;
       case 'replay': { const s = STORY.find(x => x.id === arg); if (s) this.storyCard(s, () => this.storyList(), true); break; }
       case 'retry': this.hide(); if (G.endless) startLevel({ endless: true }); else startLevel(); break;
-      case 'retrybase': this.hide(); retryBase(); break;
     }
   },
   confirm(msg, yes, onYes, onNo) {
@@ -399,15 +398,6 @@ const UI = {
       <p class="big-num">${fmtInt(d)}<small>m</small></p><p class="muted">${d > best ? (best ? 'Previous best ' + fmtInt(best) + 'm.' : 'Your first climb into the dark.') : 'Best ' + fmtInt(best) + 'm.'}${G.stats.coins ? ' +' + fmtInt(G.stats.coins) + ' coins.' : ''}</p>
       <button class="btn big" data-act="endless">AGAIN</button><button class="btn ghost" data-act="menu">MENU</button></div>`, 'dim');
   },
-  baseFail() {
-    const pct = Math.round(100 * (1 - G.base.hp / G.base.max));
-    this.show(`<div class="panel center"><h2 class="bad">${G.boss ? 'IT STILL STANDS' : 'THE BASE HOLDS'}</h2>
-      <p class="msg">${pct}% broken. You keep your coins.</p><p class="muted">Retry the ${G.boss ? 'fight' : 'base'} with the ${fmtInt(G.arriveN)} soldiers you arrived with.</p>
-      <button class="btn big" data-act="retrybase">RETRY ${G.boss ? 'FIGHT' : 'BASE'}</button>
-      <button class="btn alt" data-act="retry">RESTART LEVEL</button><button class="btn alt" data-act="prep">UPGRADES</button><p class="muted">Pump the green bands. A bigger squad breaks it faster.</p>
-      <button class="btn ghost" data-act="quit">MENU</button></div>`, 'dim');
-  },
-
   // ---------------- level clear ----------------
   levelClear(sum) {
     this.timers.push(setTimeout(() => this._clear1(sum), 450));
@@ -418,7 +408,7 @@ const UI = {
       <div class="banner"><span>LEVEL ${sum.level}</span><b>CLEAR</b></div>
       <div class="tally">
         <div class="tl" id="tl-coins">${SVG.coin}<span>COINS</span><b>0</b></div>
-        <div class="tl hide" id="tl-squad">${UPG_ICONS.soldier}<span>SQUAD AT THE WALL</span><b>${fmtInt(sum.arrive)}</b>${sum.flips ? `<i>${sum.flips} red band${sum.flips > 1 ? 's' : ''} flipped</i>` : ''}</div>
+        <div class="tl hide" id="tl-squad">${UPG_ICONS.soldier}<span>SQUAD AT THE BOSS</span><b>${fmtInt(sum.arrive)}</b>${sum.flips ? `<i>${sum.flips} red band${sum.flips > 1 ? 's' : ''} flipped</i>` : ''}</div>
         ${sum.gems ? `<div class="tl hide" id="tl-gems">${SVG.gem}<span>GEMS</span><b>+${sum.gems}</b></div>` : ''}
       </div>
       <div class="next-area"></div></div>`, 'dim clearbg');
