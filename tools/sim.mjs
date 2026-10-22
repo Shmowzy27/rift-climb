@@ -147,7 +147,11 @@ if (isMainThread && process.argv[1] && process.argv[1].endsWith('sim.mjs')) {
       const nb = [L - 1, L, L + 1].filter(k => k >= 1 && k <= 40 && !M.isStageBoss(k) && M.stageOf(k) === M.stageOf(L) && !M.isBreather(k) === !M.isBreather(L));
       sm[L] = nb.reduce((a, k) => a + r(k), 0) / nb.length;
     }
-    for (let L = 1; L <= 40; L++) t[L].baseHP = Math.round(Math.exp(sm[L]) * M.enemyHP(L) * t[L].uRef);
+    for (let L = 1; L <= 40; L++) {
+      t[L].baseHP = Math.round(Math.exp(sm[L]) * M.enemyHP(L) * t[L].uRef);
+      // hard requirement first: a skilled player with no upgrades must clear every level
+      while (spareOf(res.skilled, L, t[L].baseHP).spare < 0.5 && t[L].baseHP > 10) t[L].baseHP = Math.round(t[L].baseHP * 0.98);
+    }
     return t;
   }
 
