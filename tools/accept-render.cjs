@@ -51,5 +51,35 @@ const BOT = fs.readFileSync(path.join(__dirname, 'headless.cjs'), 'utf8').match(
   }
   const ok = rows.every(r => r.bossVisible && r.hpBarDrawn && r.liveTracers >= 20) && rows[1].drawnSoldiers >= 40 && rows[0].bossOnScreenPx < rows[1].bossOnScreenPx && rows[1].bossOnScreenPx < rows[2].bossOnScreenPx;
   console.log('C ' + (ok ? 'PASS' : 'FAIL') + (errs.length ? '  errors: ' + errs.join(' | ') : ''));
+
+  // F probe: level 40 at full load (150 enemies on screen, 120 soldiers drawn, a full volley in the
+  // air), CPU cost per frame of the game logic and of building + submitting the scene. This is a
+  // desktop CPU with a software GPU, not an iPhone: it shows the JS budget, not real frame rate.
+  const f = await page.evaluate(() => {
+    Store.d.run.level = 40; Store.d.run.weapon = 8;
+    startLevel({});
+    G.phase = 'run'; G.bossIntro = 0; G.nameCard = null; G.N = 300; layoutBodies(true);
+    G.timeScale = 1;
+    for (let i = 0; i < 240; i++) G.realUpdate(1 / 120); // fill the air with tracers
+    const fillEnemies = () => { let n = 0; for (const e of G.enemies) if (!e.dead && e.z > G.P && e.z - G.P < 80) n++; while (n < 150) { const e = addEnemy('normal', (Math.random() * 2 - 1) * 4.4, G.P + 35 + Math.random() * 40, 1e9); e.active = true; e.block = true; e.speed = 0; n++; } };
+    let logic = 0, draw = 0, calls = 0, tris = 0, frames = 0, enemiesOn = 0, tracers = 0, gl = 0;
+    const R = GFX.R, realRender = R.render.bind(R);
+    R.render = (sc, cam) => { const a = performance.now(); realRender(sc, cam); gl += performance.now() - a; };
+    for (let i = 0; i < 240; i++) {
+      fillEnemies(); G.N = 300;
+      const t0 = performance.now(); G.realUpdate(1 / 120); const t1 = performance.now(); render(); const t2 = performance.now();
+      if (i === 39) gl = 0;
+      if (i >= 40) { logic += t1 - t0; draw += t2 - t1; frames++; calls += GFX.R.info.render.calls; tris += GFX.R.info.render.triangles; tracers += HUD.liveTracers; }
+    }
+    R.render = realRender;
+    for (const e of G.enemies) if (!e.dead && e.z > G.P && e.z - G.P < 80) enemiesOn++;
+    G.timeScale = 0;
+    return { frames, enemiesOnScreen: enemiesOn, soldiersDrawn: G.bodies.length + 1, avgLiveTracers: Math.round(tracers / frames), logicMs: +(logic / frames).toFixed(2), sceneSyncAndHudMs: +((draw - gl) / frames).toFixed(2), glSubmitAndSoftwareRasterMs: +(gl / frames).toFixed(2), drawCalls: Math.round(calls / frames), triangles: Math.round(tris / frames) };
+  });
+  console.log('F probe ' + JSON.stringify(f));
+  const fOk = f.enemiesOnScreen >= 150 && f.soldiersDrawn >= 120 && f.avgLiveTracers >= 300 && f.logicMs + f.sceneSyncAndHudMs <= 4 && f.drawCalls <= 60;
+  console.log('F (proxy: game JS <= 4ms, half the 120Hz budget, and <= 60 draw calls at that load) ' + (fOk ? 'PASS' : 'FAIL') + ' — confirm 120fps on the device itself');
+  await page.screenshot({ path: path.join(OUT, 'F-L40-load.png'), timeout: 120000 }).catch(() => console.log('(F screenshot timed out under the software GPU)'));
+  console.log(`F: game JS per frame ${(f.logicMs + f.sceneSyncAndHudMs).toFixed(2)}ms (logic + scene sync + HUD) of the 8.33ms a 120Hz frame allows, ${f.drawCalls} draw calls, ${Math.round(f.triangles / 1000)}k triangles. GL time here is a software rasterizer on a desktop CPU and says nothing about an iPhone GPU; this is not an on-device measurement.`);
   await browser.close();
 })();

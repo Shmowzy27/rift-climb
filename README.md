@@ -1,9 +1,9 @@
 # RIFT CLIMB
 
 A single-file HTML5 crowd-runner / squad shooter for iPhone (portrait, touch only).
-Kai Vance starts every level with **one soldier**. Steer him through math bands that grow
-(or shrink) the squad, pump the bands you want by shooting them, cut through a crowd that fills
-the road, and break the enemy base at the end of every level.
+Kai Vance starts every level **alone**. Steer him through math bands that grow (or shrink) the
+squad, pump the bands you want by shooting them, mow through packed enemy blocks, claim weapon
+crates, and kill the boss that walks down the road at you all level before it reaches you.
 
 **The game is one file: [`rift-climb.html`](rift-climb.html).** Everything is inline: CSS,
 game code, sound, and the Three.js renderer. All 3D geometry is generated in code. No images,
@@ -25,47 +25,51 @@ Progress (coins, gems, upgrades, skins, story, current run, endless best) saves 
 
 ## How it plays
 
-- **One soldier.** Every level starts with exactly 1 soldier (plus any `+1 SOLDIER` you bought for
-  a gem). He walks alone into a few stragglers for the first ~9 seconds.
+- **One soldier.** Every level and every retry starts with exactly 1: Kai himself (plus any
+  `+1 SOLDIER` bought for a gem for that one level). The first gate is always reachable on a
+  clear lane, and until the squad outnumbers a block, enemy blocks march down the road's edges.
 - **Bands, not doorways.** A gate set is two or three translucent bands painted across the
-  road (green = `+N` / `×N`, red = `−N` / `÷N`), posts at their edges, value floating above. There is
-  no way through without taking one. Early sets are additive (`+3`, `+5`, `+8`); once the squad
-  can multiply, the best band grows a par squad by ×1.6 (the brief allows ×1.6–2.0). Values are
-  set against the par squad, so whether the `×` or the `+` is bigger depends on what you bring.
-- **Shoot to pump.** The squad fires straight ahead, and bullets pass through bands. A green band
-  climbs while you shoot it (`+5` → `+14` from max range), a red one worsens (`−4` → `−11`), and
-  damage numbers float off it like off an enemy. Standing in front of the band you want is the
-  pump; cutting across at the last moment takes another.
-- **All-red sets flip.** When every band in a set is red (sometimes one band across the whole
-  road), pour enough fire into one and it flips green, with a colour change and a chime.
-- **What's behind the band.** Some bands have an explosive barrel (pulsing red blast ring, HP
-  shown) or a barricade behind them. Bullets that pump the band hit them too: blow a barrel early
-  and it's harmless, let it die close (or walk into it) and it takes up to a fifth of the squad.
-- **Constant, visible gunfire.** Every soldier fires on its own staggered timer with a muzzle
-  flash, a white-hot tapered tracer with a tinted trail, sparks and a damage number on impact, and
-  brass casings. Past 25 soldiers the front 25 fire for everyone (each shot carries `N/25`
-  soldiers' damage) and the formation pours rails of fire that thicken with the count.
-- **A crowd, not waves.** The road carries a dense mass of enemies that streams at you, packed
-  shoulder to shoulder, sized to the squad you should have by then: 30–55 bodies on screen in
-  the second half of a level. A squad that falls well behind par meets a thinner crowd.
-- **They shoot back** from Stage 2: slow visible tracers aimed where you are, dodged by steering.
-- **Split roads** from Stage 3: a divider runs down the middle for ~8.5s; one side has a roaming
-  swarm (and coins), the other the better band. You commit before the divider starts.
-- **Overlapping sets** from Stage 4: a second set right behind the first, so you pump one while
-  approaching the next.
-- **Coins** are large gold discs with their value printed on them (80 at L1, about 260 at L40),
-  plus a cart at the road's edge with a bundle worth seven discs for steering wide.
-- **The base** shows its HP large and red and ticks down as you fire. 20s to break it in
-  Stages 1–2, 16s from Stage 3.
-- **No breathers** after Stage 1 except levels 5 and 10. Enemy HP grows ×1.21 per level.
+  road (green = `+N` / `×N`, red = `−N` / `÷N`), value floating above. Early sets add (`+3`, `+5`,
+  `+8`), the next two double, later ones are ×1.6; the best path over 7 sets ends at about
+  45–130 soldiers. The fourth set lands just before halfway, so the army is there by mid-level.
+- **Shoot to pump.** Bullets pass through bands: a green band climbs while you shoot it, a red
+  one worsens. All-red sets flip green if you pour enough into one band.
+- **Gunfire you can see.** Every soldier fires 3 shots/s on its own timer (random offset, never in
+  sync), downrange from its own place in the block, target or not. Each shot is a real projectile
+  (25 u/s, 30-unit range): a 1.2 × 0.12 white core inside a gold `#FFD66B` glow with a trail 2.5×
+  as long fading out, additive and drawn above the road and the crowd. A 0.5-unit muzzle flash on
+  every shot for exactly two frames, 6–10 sparks and a damage number on every hit. Up to 60
+  soldiers each fire their own tracer; past 60, 60 representative soldiers spread over the
+  formation fire for everyone (damage from the true count) and draw wider and brighter.
+- **Enemies in blocks.** Packed rectangles 3–5 ranks deep that advance as one mass: runners in
+  front, a core, one or two brutes anchoring the back. Block size `6 + floor(L × 0.6)`, a new block
+  every 3.5s (2.0s by L40), and never fewer on screen than 12 / 20 / 30 / 45 / 60 by stage. They
+  march out from behind the boss.
+- **The army.** One soldier mesh per soldier up to 120 (beyond that the block widens), each with
+  its own shadow and a phase-offset walk bob.
+- **They shoot back** from Stage 2, **split roads** from Stage 3 (one half is a swarm), and
+  **overlapping sets** from Stage 4.
+- **Weapon crates.** 3–5 per level: a tire stack, a steel drum, a strapped crate, HP printed
+  large and the gun they hold floating above. Shoot one down before you pass it to raise your
+  **weapon level** for the rest of the run (`Lv 4` at the left edge). Levels 1–10, bolt rifle to
+  heavy automatic: every soldier's gun model changes, damage +15% and fire rate +5% per level.
+  Missing one is a loss, never fatal.
 
-### Bosses (L8, L16, L24, L32, L40)
+### The boss race
 
-Each is a colossal single enemy, 5–6 soldiers tall, most of the road wide, built from code
-geometry with its own material. Entry: a name card and a 1.5s camera push-in, then an HP bar with
-the raw HP above it. Three phases at 100/66/33%, each changing the attack mix and visibly
-breaking the model (parts detach and tumble away, the colour shifts hot). A heavy idle (breathing,
-sway, leaning into the wind-up) keeps it alive while you shoot.
+The boss is on the road from the first second, far off, 6–8 soldiers tall, walking at you with a
+heavy gait; its HP bar and raw HP are pinned near the top all level. Your fire reaches it from
+about 40% of the way. Kill it before it reaches you: the level ends the moment it dies, and the
+progress bar holds at 99% until it does. Boss HP: 500 (L1–4), 1,200 (L5–9), 2,999 (L10–19),
+7,500 (L20–29), 18,000 (L30–40); per-soldier damage is calibrated per level so an average
+player kills it right at the wire. If it reaches you, the clash starts: it strikes on a 2s
+telegraph, each strike deletes the soldiers inside it, and the longer the clash lasts the
+faster and harder it grinds. Your fire hits it point-blank for ×1.6, so a squad that arrives a
+little short can still win.
+
+Stage levels (8, 16, 24, 32, 40) bring the stage boss; every other level brings a smaller,
+recoloured spawn of it. Three phases at 100/66/33%, each changing the attack mix and visibly
+breaking the model (parts detach and tumble away, the colour shifts hot).
 
 Attacks telegraph for 2s on the road and **delete the soldiers standing in them** (one strike takes
 at most 35% of the squad): **Sweep** (two thirds of the road), **Slam** (a ring from a marked
@@ -98,17 +102,18 @@ coin and gem counters (top right). Coins picked up in a level are kept even if y
 ### Endless
 
 Unlocked by clearing level 40. One road that never ends: run speed +3% every 30 seconds with no
-cap, gates and crowds get harsher, no base. Your personal best distance is kept.
+cap, gates and crowds get harsher, no boss. Your personal best distance is kept.
 
 ### In-level HUD
 
-Pause (top left), progress bar with a flag and % (top centre; the base timer during an assault),
-coins with a floating `+N` per pickup (top right), squad count above the squad. Nothing else.
+Pause (top left) with the weapon level under it, progress bar with a flag and % (top centre),
+the boss's HP bar and raw HP under it, coins with a floating `+N` per pickup (top right), squad
+count above the squad. Nothing else.
 
 ## The squads
 
-Each stage puts a different weapon in your squad's hands. Every soldier fires forward on its own
-timer.
+Each stage dresses the squad differently; every squad fires the same 3 shots/s for the same raw
+damage and differs in perks (the gun in their hands is the run's weapon level).
 
 | Stage | World | Squad | Weapon |
 |---|---|---|---|
@@ -129,13 +134,11 @@ The balance tools run the **real game code** headless in node (`tools/headless.c
 a given player. Nothing is a separate model.
 
 ```bash
-node tools/sim.mjs --write --seeds=12   # calibrate src/js/15-tables.js, then report
-node tools/sim.mjs --seeds=12           # report only
-node tools/bench.mjs 30 8               # per-archetype effective DPS
+node tools/calibrate.mjs --write 14     # per-level damage so an average player's boss dies at 100%
+node tools/acceptance.mjs               # fix-pass-2 checks A, B, D, E, G (headless)
+node tools/accept-render.cjs [outDir]   # check C (PNG frames of level 10) + the F frame-cost probe; needs Playwright
 node tools/build.mjs                    # rebuild rift-climb.html from src/
 ```
-
-`BALANCE_REPORT_PLACEHOLDER`
 
 ## Asset override (optional, for your own licensed art)
 
@@ -159,7 +162,7 @@ so the game works perfectly with the folder empty or absent. When the file is op
 - Any size: it is scaled to **1.1 units tall** (a soldier), centred, with feet at y = 0.
 - Y up, facing **−Z** (away from the camera, toward the enemies). The camera sees their backs.
 - A base-colour texture (`map`) and vertex colours are kept. Skeletal animation is not played:
-  the game bobs and leans the whole body. Keep it under ~3k triangles; 60 are drawn at once.
+  the game bobs and leans the whole body. Keep it under ~3k triangles; up to 120 are drawn at once.
 
 **Sprite sheets** (`sheet.json`)
 ```json
@@ -186,7 +189,7 @@ Three.js **r128** (the UMD build from cdnjs) plus the r128 `GLTFLoader`, both ve
 - Numbers (HP, band values, disc values, squad count, HUD) are crisp 2D text over the WebGL view.
 - WebGL renders at up to 2× pixel ratio to keep 120Hz headroom. The text overlay renders at full 3×.
 - Audio is synthesized: gunfire is a noise bed that thickens with the squad plus a rattle whose
-  rate climbs with the number of guns, louder during the base assault and boss fights.
+  rate climbs with the number of guns, louder once the boss is in range.
 
 ## Source layout
 
@@ -195,21 +198,21 @@ Three.js **r128** (the UMD build from cdnjs) plus the r128 `GLTFLoader`, both ve
 
 | File | |
 |---|---|
-| `00-core.js` | save data (and the v1 → v2 migration), synthesized audio + gunfire + music, haptics |
+| `00-core.js` | save data (v1 → v2 → v3 migrations), synthesized audio + gunfire + music, haptics |
 | `10-balance.js` | formulas, band generation and pumping, the upgrade economy |
-| `15-tables.js` | generated per-level tuning (base HP, `uRef`) |
+| `15-tables.js` | generated per-level per-soldier damage |
 | `20-content.js` | stages, weapons, story, relics, skins, shop, enemy types |
 | `30-art.js` | 2D overlay art: number text, HUD icons, tutorial hand, app icon |
 | `32-gfx.js` | Three.js renderer: toon materials, outlines, instanced kits, unit/enemy/boss/scenery meshes |
 | `35-assets.js` | optional asset override loader |
-| `40-game.js` | world, squad, gunfire pools, bands, hazards, crowd, return fire, bases, bosses, endless |
+| `40-game.js` | world, squad, gunfire pools, bands, crates, enemy blocks, return fire, the boss race, endless |
 | `50-input.js` | steering |
 | `60-render.js` | syncs game state into the scene each frame; overlay text and HUD |
 | `70-ui.js` | DOM menus, upgrade screen, story cards, squad picker, level-clear flow |
 | `80-main.js` | boot and main loop |
 | `tools/headless.cjs` | runs the game logic in node + the profile bot |
-| `tools/sim.mjs` | campaign simulation, economy, base HP calibration, report |
-| `tools/bench.mjs` | per-archetype effective DPS |
+| `tools/calibrate.mjs` | per-level damage calibration |
+| `tools/acceptance.mjs`, `tools/accept-render.cjs` | fix-pass-2 acceptance checks |
 
 ## Notes
 

@@ -463,7 +463,7 @@ function updateShots(dt) {
     // the boss: always on the road, in reach once it is within 30 units
     if (!dead && G.boss && !G.boss.dead) {
       const bz = G.boss.z - 1.4;
-      if (s.z >= bz && bossHitX(s.x)) { hitBoss(s.dmg, s.x, bz); dead = true; }
+      if (s.z >= bz && bossHitX(s.x)) { hitBoss(s.dmg * (G.phase === 'clash' ? BAL.pointBlank : 1), s.x, bz); dead = true; } // point blank once it has reached you
     }
     if (!dead && s.z - G.P > s.zEnd) dead = true;
     if (dead) { if (s.z > G.P) streamEnd = Math.max(streamEnd, Math.min(s.z, G.P + s.zEnd)); SHOTS.kill(i); }

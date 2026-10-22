@@ -27,6 +27,7 @@ function play(L, o, every, probe) {
   api.Store.d.tut.base = true;
   G.sim = true;
   api.startLevel({ sim: true, up: { rate: 0, dmg: 0, rev: 0 }, plusOne: 0, weapon: o.weapon || 1, rnd: api.rng(o.seed * 13 + 1) });
+  if (o.noCrates) G.crates = []; // a player who claims none
   const think = H.makeBot(api, o.prof || AVG, r2);
   const step = Math.round(every * 60);
   let i = 0, tAt100 = null;
@@ -38,7 +39,10 @@ function play(L, o, every, probe) {
     i++;
   }
   probe(i / 60);
-  return { t: i / 60, won: G.phase === 'done' || G.mode === 'clear', killT: G.stats.killT, killP: G.stats.killP, tAt100, firstHitP: G.boss && G.boss.firstHitP };
+  const won = G.phase === 'done' || G.mode === 'clear';
+  // seconds between the boss's death and the moment the road hits 100% (negative: it died first)
+  const vsWire = !won ? null : tAt100 != null ? G.stats.killT - tAt100 : -(1 - G.stats.killP) * G.Lr / G.v;
+  return { t: i / 60, won, killT: G.stats.killT, killP: G.stats.killP, tAt100, vsWire, firstHitP: G.boss && G.boss.firstHitP };
 }
 
 // ---- A: tracers ---------------------------------------------------------------------------
@@ -47,7 +51,7 @@ if (want('A')) {
   let ok = true;
   for (const L of [1, 20]) {
     const s = [];
-    play(L, { seed: 11, weapon: expW(L) }, 0.25, t => { if (t >= 1 && G.mode === 'play' && G.phase !== 'done') s.push(api.SHOTS.n); });
+    play(L, { seed: 11, weapon: expW(L) }, 0.25, t => { if (t >= 1 && G.mode === 'play' && G.phase !== 'done') { s.push(api.SHOTS.n); if (!api.SHOTS.n) console.log('  zero at', t, G.phase, 'N', G.N, 'p', (G.P / G.Lr).toFixed(3)); } });
     const st = stats(s);
     console.log(`L${L}: ${fmt(st)}`);
     if (st.min === 0) ok = false;
@@ -81,17 +85,21 @@ if (want('B')) {
 if (want('D')) {
   console.log('\n== D. L10 boss HP every second (average player) ==');
   const runs = [];
-  for (const seed of [31, 32, 33, 34, 35, 36]) {
+  for (const seed of [31, 32, 33, 34, 35, 36, 37, 38, 39]) {
     const rows = [];
     const r = play(10, { seed, weapon: expW(10) }, 1, t => rows.push(`${t.toFixed(0)}s ${(Math.min(1, G.P / G.Lr) * 100).toFixed(0)}% ${Math.max(0, Math.round(G.boss.hp))}`));
+    r.rows = rows; r.seed = seed;
     runs.push(r);
-    if (seed === 31) console.log(rows.join(' | '));
   }
-  for (const r of runs) console.log(`  first damage at ${(r.firstHitP * 100).toFixed(0)}%   boss down ${r.won ? (r.killT - r.tAt100 >= 0 ? (r.killT - r.tAt100).toFixed(1) + 's after 100%' : (r.tAt100 == null ? 'at ' + (r.killP * 100).toFixed(0) + '%' : (r.tAt100 - r.killT).toFixed(1) + 's before 100%')) : 'never (squad lost)'}`);
-  const first = runs.map(r => r.firstHitP).sort((a, b) => a - b)[3];
-  const won = runs.filter(r => r.won);
-  const near = won.filter(r => (r.tAt100 == null ? r.killP >= 0.97 : r.killT - r.tAt100 <= 2)).length;
-  verdict('D', first >= 0.33 && first <= 0.47 && near >= Math.ceil(runs.length / 2), `median first damage ${(first * 100).toFixed(0)}%, ${near}/${runs.length} runs dead within 2s of 100%`);
+  // the average player's typical run: the median by when the boss died relative to 100%
+  const byWire = runs.filter(r => r.won).sort((a, b) => a.vsWire - b.vsWire), med = byWire[byWire.length >> 1];
+  console.log(`median run (seed ${med.seed}), boss HP every second:`);
+  console.log(med.rows.join(' | '));
+  console.log('all runs:');
+  for (const r of runs) console.log(`  first damage at ${(r.firstHitP * 100).toFixed(0)}%   boss down ${r.won ? (r.vsWire >= 0 ? r.vsWire.toFixed(1) + 's after 100%' : (-r.vsWire).toFixed(1) + 's before 100% (at ' + (r.killP * 100).toFixed(0) + '%)') : 'never (squad lost)'}`);
+  const first = runs.map(r => r.firstHitP).sort((a, b) => a - b)[runs.length >> 1];
+  const near = runs.filter(r => r.won && Math.abs(r.vsWire) <= 2).length;
+  verdict('D', first >= 0.33 && first <= 0.47 && Math.abs(med.vsWire) <= 2, `first damage at ${(first * 100).toFixed(0)}% (median); median run's boss down ${med.vsWire.toFixed(1)}s from 100%; ${near}/${runs.length} individual runs within 2s, ${runs.filter(r => !r.won).length} lost`);
 }
 
 // ---- E: crates matter -----------------------------------------------------------------------
@@ -103,7 +111,7 @@ if (want('E')) {
     const t = { none: [], all: [] };
     for (const seed of [41, 42, 43, 44]) {
       for (const mode of ['none', 'all']) {
-        const r = play(L, { seed, weapon: mode === 'none' ? 1 : Math.min(10, ctx.crateTier(L - 1, 2)), prof: Object.assign({}, AVG, { crates: mode }) }, 5, () => {});
+        const r = play(L, { seed, noCrates: mode === 'none', weapon: mode === 'none' ? 1 : Math.min(10, ctx.crateTier(L - 1, 2)), prof: Object.assign({}, AVG, { crates: mode }) }, 5, () => {});
         t[mode].push(r.won ? r.killT : r.t + 30); // a lost level costs a retry
       }
     }

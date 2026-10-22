@@ -1,6 +1,6 @@
 // ============================================================================
 // BALANCE + GATE MATH + UPGRADE ECONOMY
-// Pure functions only (no DOM) so the node sim (tools/sim.mjs) can run them.
+// Pure functions only (no DOM) so the headless tools (tools/headless.cjs) can run them.
 // ============================================================================
 
 const BAL = {
@@ -26,10 +26,11 @@ const BAL = {
   fireRate: 3, shotSpeed: 25, shotRange: 30,
   // the boss walks toward you all level: it starts bossD0 + bossGap ahead and meets you at 100%
   bossD0: 42, bossGap: 5,
+  pointBlank: 1.6, // damage multiplier on the boss once it has reached the squad: a squad a little short still finishes it
   // enemy blocks: packed formations, 3-5 ranks deep, advancing as one mass
   floors: [12, 20, 30, 45, 60], // fewest live enemies ahead, by stage (after the first 5s)
   // weapon crates: weapon level 1-10, each level x1.15 damage and x1.05 fire rate
-  weaponDmg: 1.15, weaponRate: 1.05, crateFrac: [0.3, 0.5, 0.75],
+  weaponDmg: 1.13, weaponRate: 1.05, crateFrac: [0.3, 0.5, 0.75],
 };
 
 function stageOf(L) { return Math.min(5, Math.floor((L - 1) / 8) + 1); }

@@ -1,6 +1,6 @@
 // Runs the real game logic (src/js 00, 10, 15, 20, 40) in a node VM with the DOM,
 // audio and renderer stubbed out, plus a bot that plays like a given player profile.
-// Used by tools/sim.mjs (balance + economy) and tools/bench.mjs (archetype DPS).
+// Used by tools/calibrate.mjs and tools/acceptance.mjs.
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
