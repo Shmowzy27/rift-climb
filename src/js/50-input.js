@@ -18,7 +18,7 @@ function onDown(ev) {
 function onMove(ev) {
   ev.preventDefault();
   if (ev.pointerId !== Steer.id || G.mode !== 'play') return;
-  const unit = V.F / LEAD_DEPTH; // screen px per world unit at the leader
+  const unit = GFX.project(G.lead.x, 0, G.P, SP2).s; // screen px per world unit at the leader
   G.lead.tx = clamp(Steer.tx0 + (ev.clientX - Steer.x0) / unit * 1.25, -ROAD + 0.4, ROAD - 0.4);
 }
 function onUp(ev) {

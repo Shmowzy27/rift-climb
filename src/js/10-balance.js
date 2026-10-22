@@ -23,7 +23,13 @@ const BAL = {
   decayTrickle: 0.01, barrageEvery: 1.6, barrageHit: 0.064, // 1%/s always + a 6.4% barrage every 1.6s; average player dodges half
   bossDecay: 0.012,         // boss fights average 1.2%/s: a small trickle + telegraphed strikes
   bossTrickle: 0.004, bossHit: 0.12,
-  // per-soldier damage: scaled so an average squad two gates in kills a normal enemy in ~1 volley
+  // Base HP follows the squads players actually bring to the wall. Measured with the
+  // average-player bot (tools/playtest-bot.js measureArrivals): real arrival / model arrival.
+  arrivalFactor: [1.0, 1.0, 0.65, 0.33, 0.14],
+  meleeBossUptime: 0.55,
+  cleaveMax: 4,
+  boltFan: 1,               // crossbow volleys focus one target (spreading damage stops nothing)             // a blade swing cuts at most this many enemies at contact    // melee squads only cut a boss while it closes in (~55% of the fight)
+  // per-soldier damage: scaled so an average squad ONE gate in kills a normal enemy in ~1 volley
   kappa: 2.5,
   enemyHpAvg: 1.2,          // average HP multiplier across archetypes
   contactAvg: 1.6,          // average soldiers lost per enemy that reaches the formation
@@ -203,9 +209,10 @@ function simLevel(L, pBest, rnd, dmg) {
   const segT = roadSeconds(L) / segs;
   const debuffSeg = 1 + Math.floor(rnd() * sets);
   let N = BAL.startSoldiers, N2 = N, lost = 0, squeezed = false;
+  const wsum = Array.from({ length: sets }, (_, i) => segWeight(i, sets)).reduce((a, b) => a + b, 0);
   for (let s = 0; s < segs; s++) {
     if (s > 0) { // first stretch is open road
-      const n = E / sets;
+      const n = E * segWeight(s - 1, sets) / wsum;
       const volley = Math.max(1, N * (dmg || 1) * (s === debuffSeg ? 0.85 : 1));
       const perEnemy = Math.ceil(hp / volley);
       const avail = BAL.salvoRate * segT * 0.75;
@@ -219,11 +226,13 @@ function simLevel(L, pBest, rnd, dmg) {
       if (g.squeeze) squeezed = true;
       const sorted = g.slice().sort((a, b) => b.result - a.result);
       N = rnd() < pBest ? sorted[0].result : sorted[1 + Math.floor(rnd() * (sorted.length - 1))].result;
-      if (s === 1) N2 = N;
+      if (s === 0) N2 = N; // squad one gate in: the first fight of every level
     }
   }
   return { N0: N, N2, lost };
 }
+// share of a level's enemies in each fighting stretch: ramps from light to heavy
+function segWeight(i, n) { return 0.35 + 1.3 * i / Math.max(1, n - 1); }
 function median(a) { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; }
 function geomean(a) { let t = 0; for (const v of a) t += Math.log(Math.max(1, v)); return Math.round(Math.exp(t / a.length)); }
 
@@ -234,7 +243,7 @@ function levelTuning(L, fresh) {
   if (!fresh && TUNING[L] && TUNING[L].baseHP) return { L, dmg: TUNING[L].dmg, baseHP: TUNING[L].baseHP, timer: isStageBoss(L) ? BAL.bossTime : BAL.assaultTime };
   if (LEVEL_CACHE[L]) return LEVEL_CACHE[L];
   const runs = BAL.simRuns;
-  // pass 1: squad size two gates in -> per-soldier damage
+  // pass 1: squad size one gate in -> per-soldier damage
   let r = rng(1000 + L);
   const n2 = []; for (let i = 0; i < runs; i++) n2.push(simLevel(L, BAL.avgPick, r, 1e9).N2);
   const dmg = Math.max(1, Math.round(BAL.kappa * enemyHP(L) * BAL.enemyHpAvg / median(n2)));
@@ -249,7 +258,7 @@ function levelTuning(L, fresh) {
   const hp = boss ? baseHP * BAL.bossHpMult : baseHP;
   const tAvg = timeToBreak(hp, Na, dmg, k, BAL.decayFlat);
   const tCareless = timeToBreak(hp, Nc, dmg, k, BAL.decayFlat);
-  return (LEVEL_CACHE[L] = { L, dmg, baseHP: hp, Na, Nc, tAvg, tCareless, timer: boss ? BAL.bossTime : BAL.assaultTime });
+  return (LEVEL_CACHE[L] = { L, dmg, baseHP: hp, Na, Nc, N2: median(n2), tAvg, tCareless, timer: boss ? BAL.bossTime : BAL.assaultTime });
 }
 BAL.carelessPick = 0.35;
 BAL.avgPick = 0.7;
@@ -260,4 +269,16 @@ function balanceCheck() {
   return rows;
 }
 
-if (typeof module !== 'undefined') module.exports = { TUNING, clearTuningCache, BAL, stageOf, enemyHP, enemiesFor, roadSeconds, speedMult, coinsPerKill, gateSetsFor, makeGateSet, gateResult, opLabel, levelTuning, balanceCheck, rng, isStageBoss };
+// Base assault per weapon archetype. Each archetype's base HP is scaled by its own
+// base DPS (rate x damage factor), so the 14s / ~21s timing holds for every squad.
+function archBaseRow(L, A, rift) {
+  const t = levelTuning(L, true);
+  const rate = A.rate * (rift ? A.riftRate : 1), dF = A.dmgF * (rift ? A.riftDmg : 1);
+  const melee = A.id === 'blade' && isStageBoss(L) ? BAL.meleeBossUptime : 1;
+  const hp = Math.round(t.baseHP * rate * dF / BAL.salvoRate * melee);
+  const k = isStageBoss(L) ? BAL.bossDecay : BAL.decay;
+  const dps = n => n * t.dmg * dF * rate * melee; // damage per second from a squad of n
+  const T = n => timeToBreak(hp, n, t.dmg * dF * rate * melee / BAL.salvoRate, k, BAL.decayFlat);
+  return { L, arch: A.id, rate: +rate.toFixed(2), dmgPerSoldier: +(t.dmg * dF).toFixed(3), baseHP: hp, avgDPS: Math.round(dps(t.Na)), tAvg: T(t.Na), tCareless: T(t.Nc) };
+}
+if (typeof module !== 'undefined') module.exports = { segWeight, archBaseRow, TUNING, clearTuningCache, BAL, stageOf, enemyHP, enemiesFor, roadSeconds, speedMult, coinsPerKill, gateSetsFor, makeGateSet, gateResult, opLabel, levelTuning, balanceCheck, rng, isStageBoss };

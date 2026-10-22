@@ -3,34 +3,45 @@
 // ============================================================================
 
 const STAGES = [
-  { name: 'THE FLOODED WARD', short: 'Flooded Ward',
-    pal: { sky1: '#38d6c8', sky2: '#b8fff2', ground: '#2d6a6b', road: '#4b5b5e', road2: '#56686b', edge: '#c9d6d2', line: '#e8f2ee', accent: '#2de1c2', accent2: '#0f8f86', fog: '#a6eee4', bld: ['#5d8a8c', '#46777a', '#6f9c9a'], win: '#c9fff6' },
-    sig: 'slime', boss: 'THE BRINE MOTHER', bossSub: 'She nests where the water goes black' },
-  { name: 'THE CURSED KEEP ROAD', short: 'Keep Road',
-    pal: { sky1: '#d4243b', sky2: '#ff9a6b', ground: '#2a1a1c', road: '#3a3436', road2: '#443c3e', edge: '#7a6a6c', line: '#e8d6c8', accent: '#ff3b5c', accent2: '#8c0f24', fog: '#e8706a', bld: ['#2a2224', '#1f191b', '#3a2e30'], win: '#ff8a5c' },
-    sig: 'husk', boss: 'WARDEN GOREBRAND', bossSub: 'Keeper of a door that should stay shut' },
-  { name: 'THE IRON FOUNDRY', short: 'Iron Foundry',
-    pal: { sky1: '#e8901f', sky2: '#ffd98a', ground: '#3a2a1c', road: '#4a4038', road2: '#544840', edge: '#8a7a6a', line: '#ffe0a0', accent: '#ffb02e', accent2: '#ff5a1a', fog: '#f0b870', bld: ['#5a4632', '#4a3826', '#6a543c'], win: '#ffcf6b' },
-    sig: 'drone', boss: 'FORGE-TYRANT MK IV', bossSub: 'Built on the other side. Built to last.' },
-  { name: 'THE NEON SPRAWL', short: 'Neon Sprawl',
-    pal: { sky1: '#2a0f4a', sky2: '#ff2bd6', ground: '#0e0a18', road: '#16121f', road2: '#1c1728', edge: '#2bf0ff', line: '#ff2bd6', accent: '#ff2bd6', accent2: '#2bf0ff', fog: '#7a2a9a', bld: ['#1c1530', '#231a3c', '#140f24'], win: '#2bf0ff' },
-    sig: 'ghost', boss: 'THE ECHO', bossSub: 'It brings a squad exactly like yours' },
-  { name: 'THE RIFT ITSELF', short: 'The Rift',
-    pal: { sky1: '#000000', sky2: '#1a1830', ground: null, road: '#101018', road2: '#16161f', edge: '#ffffff', line: '#ffffff', accent: '#ffffff', accent2: '#b9b6ff', fog: '#25223d', bld: ['#0c0c14', '#12121c', '#08080e'], win: '#ffffff' },
-    sig: 'crawler', boss: 'THE OTHER KAI', bossSub: 'He got here first' },
+  { name: 'THE SUNKEN MARCH', short: 'Sunken March', arch: 'crossbow',
+    pal: { sky1: '#2fb7b0', sky2: '#c4fff2', fog: '#9fe6dc', ground: '#2c5f5c', road: '#4f5d5a', road2: '#46524f', edge: '#a9b6af', line: '#d8e6de', accent: '#2de1c2', stone: '#7f8f88', stone2: '#5f6d68', water: '#2fa39a', leaf: '#3f6f4a' },
+    boss: 'THE BRINE MOTHER', bossSub: 'She nests where the water goes black' },
+  { name: 'THE EMBER SPIRE', short: 'Ember Spire', arch: 'staff',
+    pal: { sky1: '#7a0a1c', sky2: '#ff7a3d', fog: '#c8402e', ground: '#1e1012', road: '#3a2a2c', road2: '#2e2022', edge: '#6a4a46', line: '#ff9a4a', accent: '#ff3b5c', stone: '#3a2c2e', stone2: '#241a1c', glow: '#ff8a2a', lava: '#ff5a1a' },
+    boss: 'THE KINDLED WARDEN', bossSub: 'It keeps the tower burning. It keeps the door shut.' },
+  { name: 'THE THOUSAND GATES', short: 'Thousand Gates', arch: 'blade',
+    pal: { sky1: '#ff8a3d', sky2: '#ffd9a0', fog: '#f0a070', ground: '#3a2a24', road: '#8a6a50', road2: '#7a5c44', edge: '#c9a27a', line: '#f2d6b0', accent: '#e8332a', torii: '#d8322a', toriiTop: '#1e1a1e', stone: '#9a9088', leaf: '#ff6a2a' },
+    boss: 'THE HOLLOW SHOGUN', bossSub: 'Three lessons. Each one sharper.' },
+  { name: 'THE IRON SPRAWL', short: 'Iron Sprawl', arch: 'beam',
+    pal: { sky1: '#12061f', sky2: '#4a1660', fog: '#2a1240', ground: '#0a0812', road: '#16131e', road2: '#1b1726', edge: '#2bf0ff', line: '#ff2bd6', accent: '#ff2bd6', bld: '#1c1830', bld2: '#141024', neonA: '#ff2bd6', neonB: '#2bf0ff' },
+    boss: 'THE ECHO', bossSub: 'It brings a squad exactly like yours' },
+  { name: 'THE RIFT ITSELF', short: 'The Rift', arch: null,
+    pal: { sky1: '#000000', sky2: '#15132a', fog: '#0c0b18', ground: null, road: '#101018', road2: '#15151f', edge: '#ffffff', line: '#ffffff', accent: '#ffffff', rock: '#0e0e16' },
+    boss: 'THE OTHER KAI', bossSub: 'He got here first' },
 ];
+
+// Weapon archetypes. rate/dmgF are tuned so effective DPS against each archetype's own
+// stage mix lands within 10% (tools/archetype-bench.js). riftRate/riftDmg retune them for
+// the void crawlers so the Rift's average is even while each Rift profile has its own winner.
+const ARCH = {
+  crossbow: { id: 'crossbow', squad: 'FOOTMEN', weapon: 'Crossbows', rate: 1.3, range: 24, dmgF: 1.0, riftRate: 1.78, riftDmg: 1, desc: 'Arcing bolts drop over shields; overkill flies on to the next. Short range.' },
+  staff: { id: 'staff', squad: 'APPRENTICES', weapon: 'Staves', rate: 0.49, range: 48, dmgF: 2.0, riftRate: 2.08, riftDmg: 1, desc: 'Huge homing bolts, one every two seconds. They pierce one and carry overkill on.' },
+  blade: { id: 'blade', squad: 'RETAINERS', weapon: 'Blades', rate: 1.5, range: 1.4, dmgF: 1.6, riftRate: 0.88, riftDmg: 1, desc: 'Melee only. Enormous damage at contact, armor or not. Hold your nerve.' },
+  beam: { id: 'beam', squad: 'PILOTS', weapon: 'Beam rifles', rate: 5.0, range: 48, dmgF: 0.107, riftRate: 1, riftDmg: 0.66, desc: 'Fast beams pierce a whole line. Armor and shields stop them. Pick your lane.' },
+};
+const ARCH_ORDER = ['crossbow', 'staff', 'blade', 'beam'];
 
 // One card before each stage, a 2-line card after each stage boss.
 const STORY = [
-  { id: 'pre1', stage: 1, title: 'THE FLOODED WARD', lines: ['A rift tore open under the city.', 'Things started climbing out.', 'I couldn’t do anything about it. Then it started feeding me too.'] },
-  { id: 'post1', stage: 1, title: 'AFTER THE BRINE MOTHER', lines: ['She wasn’t nesting near the rift.', 'She was guarding it.'] },
-  { id: 'pre2', stage: 2, title: 'THE CURSED KEEP ROAD', lines: ['Under the tunnels, a road to a keep nobody remembers building.', 'Every wall faces inward.'] },
-  { id: 'post2', stage: 2, title: 'AFTER GOREBRAND', lines: ['The seals weren’t broken. They were opened, one at a time.', 'From this side.'] },
-  { id: 'pre3', stage: 3, title: 'THE IRON FOUNDRY', lines: ['On the other side, something is building.', 'Every machine I break makes more sense than it should.'] },
-  { id: 'post3', stage: 3, title: 'AFTER THE TYRANT', lines: ['Every order down here is signed the same way.', 'I know that handwriting.'] },
-  { id: 'pre4', stage: 4, title: 'THE NEON SPRAWL', lines: ['There’s a city over here. Brighter than ours. Empty.', 'Whoever opened the rift lives in it.'] },
+  { id: 'pre1', stage: 1, title: 'THE SUNKEN MARCH', lines: ['A rift tore open under the city. Things started climbing out.', 'I couldn\u2019t do anything about it. Then it started feeding me too.', 'The first door it opened led into a drowned kingdom.'] },
+  { id: 'post1', stage: 1, title: 'AFTER THE BRINE MOTHER', lines: ['She wasn\u2019t nesting near the rift.', 'She was guarding it.'] },
+  { id: 'pre2', stage: 2, title: 'THE EMBER SPIRE', lines: ['A tower that burns and never falls.', 'Every seal on its stairs was broken by hand.'] },
+  { id: 'post2', stage: 2, title: 'AFTER THE WARDEN', lines: ['The seals weren\u2019t broken. They were opened, one at a time.', 'From this side.'] },
+  { id: 'pre3', stage: 3, title: 'THE THOUSAND GATES', lines: ['A road of red gates, and someone walked it before me.', 'Every gate was left open behind him.'] },
+  { id: 'post3', stage: 3, title: 'AFTER THE SHOGUN', lines: ['Every gate was unbarred the same way.', 'I know that hand.'] },
+  { id: 'pre4', stage: 4, title: 'THE IRON SPRAWL', lines: ['A city of machines. Brighter than ours. Empty.', 'Whoever opened the rift lives here.'] },
   { id: 'post4', stage: 4, title: 'AFTER THE ECHO', lines: ['He had my face.', 'He just started climbing sooner.'] },
-  { id: 'pre5', stage: 5, title: 'THE RIFT ITSELF', lines: ['No ground. No sky. Only the road, and up.', 'It was opened from the inside. That’s the only way it closes.'] },
+  { id: 'pre5', stage: 5, title: 'THE RIFT ITSELF', lines: ['No ground. No sky. Only the road, and up.', 'It was opened from the inside. That\u2019s the only way it closes.'] },
   { id: 'post5', stage: 5, title: 'THE END OF THE CLIMB', lines: ['I closed it from the inside.', 'Somewhere below, a nobody looks up.'], ending: true },
 ];
 
@@ -65,7 +76,7 @@ const DEBUFFS = {
 
 // Squad skins: cosmetic only. c = coat, c2 = coat shade, h = helmet, t = trim, fx = extras
 const SKINS = [
-  { id: 'conscript', name: 'Conscripts', desc: 'Plain fatigues, dented helmets.', unlock: 1, c: '#6b7a4a', c2: '#4a5632', h: '#7d8a5a', t: '#3a3a2a', fx: ['dent'] },
+  { id: 'conscript', name: 'Conscripts', desc: 'Plain issue for every squad: footmen, apprentices, retainers, pilots.', unlock: 1, c: '#6b7a4a', c2: '#4a5632', h: '#7d8a5a', t: '#3a3a2a', fx: ['dent'] },
   { id: 'ember', name: 'Ember Company', desc: 'Red helmets, scorched gear.', unlock: 3, c: '#5a4a3a', c2: '#3a2e24', h: '#d6262f', t: '#ff8a1f', fx: ['scorch'] },
   { id: 'night', name: 'Night Watch', desc: 'Dark grey, a lantern on every pack.', unlock: 6, c: '#4a4c55', c2: '#30323a', h: '#3a3c44', t: '#ffcf6b', fx: ['lantern'] },
   { id: 'tide', name: 'Tidecallers', desc: 'Stage 1 clear. Kelp-wrapped, dripping.', unlock: 8, c: '#1f6a5a', c2: '#124a3e', h: '#2a8a74', t: '#9ff3e1', fx: ['kelp', 'drip'] },
@@ -96,6 +107,16 @@ const SHOP = [
 const shopLvl = id => (Store.d.shop[id] || 0);
 const RALLY_COST = 25;
 
+// Enemy looks per stage and role (all original)
+const STAGE_LOOKS = [
+  { runner: 'slime', normal: 'slime', brute: 'bigslime', shielder: 'slime', leaper: 'slime' },
+  { runner: 'hound', normal: 'husk', brute: 'oni', shielder: 'husk', leaper: 'hound' },
+  { runner: 'wisp', normal: 'yokai', brute: 'bigyokai', shielder: 'yokai', leaper: 'hound' },
+  { runner: 'ghost', normal: 'drone', brute: 'bigdrone', shielder: 'drone', leaper: 'ghost' },
+  { runner: 'crawler', normal: 'crawler', brute: 'bigcrawler', shielder: 'shieldcrawler', leaper: 'crawler' },
+];
+// Stage 5 levels lean on different problems, so each archetype has levels it makes easier
+const RIFT_PROFILES = { 33: 'packs', 34: 'brutes', 35: 'shields', 36: 'drift', 37: 'shields', 38: 'drift', 39: 'mixed' };
 // Enemy archetypes. hp = multiplier on the level's enemy HP; kill = soldiers lost on contact.
 const ENEMY_TYPES = {
   runner: { hp: 0.55, speed: 7, kill: 1, r: 0.45 },

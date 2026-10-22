@@ -19,13 +19,16 @@ function frame(ts) {
 function boot() {
   Store.load();
   CV = document.getElementById('game');
-  CX = CV.getContext('2d', { alpha: false });
+  HC = document.getElementById('hud');
+  CX = HC.getContext('2d');
+  GFX.init(CV);
   resize();
+  ASSETS.init(() => { GFX.squadKey = ''; if (G.mode === 'play') GFX.buildSquad(G.arch, skinById(Store.d.skin)); });
   window.addEventListener('resize', () => {
     resize();
     if (V.w > V.h && G.mode === 'play') UI.pause();
   });
-  bindInput(CV);
+  bindInput(HC);
   UI.init();
   Haptic.init();
   const icon = makeAppIcon();

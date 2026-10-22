@@ -3,6 +3,10 @@
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const M = require('../src/js/10-balance.js');
+// the archetype table lives in the content file; pull just that object for the report
+import { readFileSync as rf } from 'node:fs';
+const contentSrc = rf(new URL('../src/js/20-content.js', import.meta.url), 'utf8');
+const ARCH = new Function(contentSrc.slice(contentSrc.indexOf('const ARCH = {'), contentSrc.indexOf('const ARCH_ORDER')) + '; return ARCH;')();
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 const TABLES = new URL('../src/js/15-tables.js', import.meta.url);
 
@@ -60,4 +64,22 @@ for (const L of [3, 12, 20, 28, 36]) {
   const g = M.makeGateSet(48, L, r);
   console.log(`  L${L} with 48 soldiers: ` + g.map(x => `[${x.label.join(' ')}] -> ${x.result}`).join('  |  '));
 }
-process.exitCode = bad || viol ? 1 : 0;
+
+// base assault, re-run per stage with its weapon archetype (Stage 5: all four)
+console.log('\nBase assault per archetype (avg 13-15s, careless 19-23s; bosses: avg < timer-5, careless > timer)');
+console.log(' L  squad      rate  dmg/soldier     baseHP   avg DPS    avg T   careless T');
+let badA = 0;
+for (let L = 1; L <= 40; L++) {
+  const st = M.stageOf(L);
+  const archs = st === 5 ? ['crossbow', 'staff', 'blade', 'beam'] : [['crossbow', 'staff', 'blade', 'beam'][st - 1]];
+  if (!(L % 4 === 1 || M.isStageBoss(L) || L >= 33)) continue; // sample: every 4th level, all bosses, all of the Rift
+  for (const a of archs) {
+    const r = M.archBaseRow(L, ARCH[a], st === 5);
+    const boss = M.isStageBoss(L), timer = boss ? 55 : 20;
+    const ok = boss ? r.tAvg <= timer - 5 && r.tCareless > timer : r.tAvg >= 13 && r.tAvg <= 15 && r.tCareless >= 19 && r.tCareless <= 23;
+    if (!ok) badA++;
+    console.log(`${pad(L, 2)}  ${a.padEnd(9)} ${pad(r.rate, 5)} ${pad(r.dmgPerSoldier, 12)} ${pad(r.baseHP, 10)} ${pad(r.avgDPS, 9)} ${pad(r.tAvg.toFixed(1), 7)}s ${pad(isFinite(r.tCareless) ? r.tCareless.toFixed(1) : 'never', 10)}s${ok ? '' : '  <-- OUT'}`);
+  }
+}
+console.log(`archetype rows out of band: ${badA}`);
+process.exitCode = bad || viol || badA ? 1 : 0;

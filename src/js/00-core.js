@@ -171,6 +171,9 @@ const SFX = {
   crumble() { AudioSys.noise({ d: 0.45, v: 0.35, f: 900, f2: 120 }); AudioSys.tone({ f: 90, f2: 40, d: 0.3, type: 'square', v: 0.1 }); },
   rally() { [0, 4, 7, 12, 16, 19].forEach((n, i) => AudioSys.tone({ f: 392 * Math.pow(2, n / 12), d: 0.2, type: 'square', v: 0.08, at: i * 0.05 })); },
   baseHit() { if (AudioSys.throttle('bh', 80)) return; AudioSys.tone({ f: 110, f2: 55, d: 0.1, type: 'square', v: 0.09 }); AudioSys.noise({ d: 0.1, v: 0.12, f: 1200 }); },
+  orb() { if (AudioSys.throttle('orb', 80)) return; AudioSys.tone({ f: 520, f2: 1040, d: 0.18, type: 'sine', v: 0.1 }); AudioSys.tone({ f: 780, f2: 1560, d: 0.14, type: 'triangle', v: 0.05, at: 0.03 }); },
+  beam() { if (AudioSys.throttle('beam', 70)) return; AudioSys.tone({ f: 1800, f2: 600, d: 0.08, type: 'sawtooth', v: 0.04 }); },
+  slash() { if (AudioSys.throttle('slash', 90)) return; AudioSys.noise({ d: 0.14, v: 0.22, f: 3000, f2: 900, type: 'bandpass', q: 1.5 }); AudioSys.tone({ f: 1200, f2: 300, d: 0.1, type: 'triangle', v: 0.05 }); },
   card() { AudioSys.tone({ f: 392, d: 0.5, type: 'sine', v: 0.1 }); AudioSys.tone({ f: 587, d: 0.6, type: 'sine', v: 0.08, at: 0.12 }); },
 };
 

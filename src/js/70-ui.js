@@ -121,9 +121,14 @@ const UI = {
       const s = STORY.find(x => x.id === 'pre' + st);
       if (!Store.d.story.includes(s.id)) { Store.d.story.push(s.id); Store.save(); }
       MENU.stage = st;
-      this.storyCard(s, () => { this.hide(); startLevel(); });
+      this.storyCard(s, () => this.launch());
       return;
     }
+    this.launch();
+  },
+  launch() {
+    const run = Store.d.run;
+    if (stageOf(run.level) === 5) { this.archPick(() => { this.hide(); startLevel(); }); return; }
     this.hide(); startLevel();
   },
   storyCard(s, done, replay) {
@@ -211,15 +216,38 @@ const UI = {
     if (d.skinsOwned.includes(id)) { d.skin = id; Store.save(); this.skins(); return; }
     if (s.price) this.shop();
   },
+  previewArch() { const run = Store.d.run; return (run && stageArch(run.level, run)) || 'crossbow'; },
   paintMinis() {
     for (const cv of this.root.querySelectorAll('canvas.mini')) {
       const s = skinById(cv.dataset.skin), W = cv.width, H = cv.height, k = Math.min(3, window.devicePixelRatio || 1);
       cv.width = W * k; cv.height = H * k; cv.style.width = W + 'px'; cv.style.height = H + 'px';
       const c = cv.getContext('2d'); c.scale(k, k);
-      c.translate(W / 2, H * 0.94);
-      drawSoldier(c, s, W / 64, false, 0);
-      if (cv.dataset.locked === '1') { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(10,10,20,0.85)'; c.fillRect(-W, -H, W * 2, H * 2); }
+      const url = GFX.ok && GFX.preview(s, cv.dataset.arch || this.previewArch());
+      if (!url) continue;
+      const img = new Image();
+      img.onload = () => {
+        c.drawImage(img, 0, 0, W, H);
+        if (cv.dataset.locked === '1') { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(10,10,20,0.85)'; c.fillRect(0, 0, W, H); }
+      };
+      img.src = url;
+      continue;
     }
+  },
+  // Stage 5: pick any of the four squads before each level, re-pick for free
+  archPick(done) {
+    const run = Store.d.run;
+    const cur = run.arch || 'crossbow';
+    const el = this.show(`<div class="panel"><p class="tag">THE RIFT \u00b7 LEVEL ${run.level}</p><h2>CHOOSE YOUR SQUAD</h2>
+      <div class="arch-grid">${ARCH_ORDER.map(id => `<button class="arch ${id === cur ? 'sel' : ''}" data-a="${id}">
+        <canvas class="mini" data-skin="${Store.d.skin}" data-arch="${id}" width="84" height="84"></canvas>
+        <b>${ARCH[id].squad}</b><span>${ARCH[id].weapon}</span><i>${ARCH[id].desc}</i></button>`).join('')}</div>
+      <p class="muted center-t">${RIFT_PROFILES[run.level] ? 'This level: ' + { packs: 'swarms of fast crawlers', brutes: 'heavy armored crawlers', shields: 'crawlers behind shields', drift: 'crawlers that drift and leap', mixed: 'everything at once' }[RIFT_PROFILES[run.level]] + '.' : 'Everything you learned, at once.'}</p></div>`, 'dim');
+    this.paintMinis();
+    el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation(); SFX.buff();
+      run.arch = b.dataset.a; Store.save();
+      done();
+    }, { once: true }));
   },
   skinCard(s, done) {
     const el = this.show(`<div class="unlock"><div class="rays"></div><p class="tag">NEW CHAMPION SKIN</p>
