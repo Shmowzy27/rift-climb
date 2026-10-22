@@ -6,13 +6,12 @@
 const BAL = {
   startSoldiers: 1,
   squadCap: 9999,
-  drawCap: 60,              // soldiers drawn; the count above the squad is the truth
-  gunCap: 25,               // past this many soldiers the front rank fires for everyone
+  drawCap: 120,             // soldiers drawn; past this the block widens instead
+  gunCap: 60,               // one real tracer per soldier up to this many; past it 60 representative guns carry N/60 each
   runSpeed: 10,             // world units per second at 1.0
   speedPerLevel: 0.008, speedCap: 1.3,
   roadBase: 62, roadPerLevel: 0.35, roadCap: 76, // seconds of running
   gates: 7,                 // gate sets per level
-  hpBase: 6, hpGrowth: 1.21, breatherHP: 0.8,
   // par path: what a player taking the best gate (unpumped) carries into each gate
   growth: [1.6, 1.6, 1.6, 1.6, 1.6], // best-gate growth per stage once the squad is big enough to multiply
   parLoss: 0.12,            // share of the squad the road takes between gates
@@ -21,27 +20,23 @@ const BAL = {
   pumpMax: { add: 3, mul: 3, sub: 6, div: 2, early: 9 }, // pump steps from untouched to fully pumped (early: +5 -> +14)
   pumpFloor: 12,            // a squad smaller than this pumps proportionally slower; bigger never pumps faster
   flipAt: 0.55,             // share of a red band's steps you must pour in before it flips
-  assaultTime: [20, 20, 16, 16, 16], bossTime: 40,
   bossHitCap: 0.35,         // one boss strike deletes at most this share of the squad
-  crowd: 0.15,              // enemy HP on the road per unit of the par squad's fire
-  crowdStage: [1, 1, 1, 0.9, 0.6], // the Rift's crawlers blink, drift and wall up: fewer of them
-  ddaAt: 0.8,               // below this share of par, part of the crowd ahead thins out
-  crowdSpread: 1.6,         // extra bodies on the flanks that never reach the squad's line of fire
-  hpPerShot: 0.85,            // a normal enemy takes ~this many par soldier-shots
   shotsPerSec: [0, 0.7, 1.0, 1.2, 1.3], // enemy return fire across the crowd, by stage
+  // gunfire: a soldier is ~1 unit tall; tracers are 1.2 long, fly 25 u/s, despawn after 30
+  fireRate: 3, shotSpeed: 25, shotRange: 30,
+  // the boss walks toward you all level: it starts bossD0 + bossGap ahead and meets you at 100%
+  bossD0: 42, bossGap: 5,
+  // enemy blocks: packed formations, 3-5 ranks deep, advancing as one mass
+  floors: [12, 20, 30, 45, 60], // fewest live enemies ahead, by stage (after the first 5s)
+  // weapon crates: weapon level 1-10, each level x1.15 damage and x1.05 fire rate
+  weaponDmg: 1.15, weaponRate: 1.05, crateFrac: [0.3, 0.5, 0.75],
 };
 
 function stageOf(L) { return Math.min(5, Math.floor((L - 1) / 8) + 1); }
 function isStageBoss(L) { return L % 8 === 0; }
 function isBreather(L) { return L === 5 || L === 10; }
-function enemyHP(L, loop) {
-  let h = BAL.hpBase * Math.pow(BAL.hpGrowth, L - 1);
-  if (isBreather(L)) h *= BAL.breatherHP;
-  return h * Math.pow(1.35, loop || 0);
-}
 function roadSeconds(L) { return Math.min(BAL.roadCap, BAL.roadBase + BAL.roadPerLevel * (L - 1)); }
 function speedMult(L) { return Math.min(BAL.speedCap, 1 + BAL.speedPerLevel * (L - 1)); }
-function assaultTimer(L) { return isStageBoss(L) ? BAL.bossTime : BAL.assaultTime[stageOf(L) - 1]; }
 function rng(seed) { // mulberry32
   let a = seed >>> 0;
   return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -232,26 +227,29 @@ function planGates(L, rnd) {
 }
 
 // ---------------------------------------------------------------------------
-// Per-level tuning: per-soldier damage and base HP (written by tools/sim.mjs --write)
+// Per-level tuning. Boss HP is fixed by level band; per-soldier damage (written by
+// tools/calibrate.mjs into 15-tables.js) is set so an average player's boss dies right at 100%.
 // ---------------------------------------------------------------------------
 const TUNING = {};
-// per-soldier damage grows with enemy HP, net of the upgrades an average buyer has by then
-function dmgPerSoldier(L) {
-  const t = TUNING[L];
-  const u = t && t.uRef ? t.uRef : 1;
-  return BAL.hpBase * Math.pow(BAL.hpGrowth, L - 1) / BAL.hpPerShot / u;
+function bossHP(L, loop) {
+  const h = L <= 4 ? 500 : L <= 9 ? 1200 : L <= 19 ? 2999 : L <= 29 ? 7500 : 18000;
+  return Math.round(h * Math.pow(1.35, loop || 0));
 }
-function levelTuning(L) {
-  const t = TUNING[L] || {};
-  const st = stageOf(L);
-  // fallback before calibration: a par squad of ~60 for ~12s
-  const par = parPath(L)[BAL.gates] * (1 - BAL.parLoss);
-  const baseHP = t.baseHP || Math.round(par * dmgPerSoldier(L) * (t.uRef || 1) * 1.3 * (assaultTimer(L) - 5) * (isStageBoss(L) ? 0.7 : 1));
-  return { L, st, dmg: dmgPerSoldier(L), baseHP, uRef: t.uRef || 1, timer: assaultTimer(L) };
-}
-// What the base shows: its own scale (four digits by mid-game), independent of the damage units.
-// Hits are converted into it, so the number itself is the drama and the timing stays calibrated.
-function baseDisplayHP(L, loop) { return niceNum(150 * Math.pow(1.17, L - 1) * (isStageBoss(L) ? 3 : 1) * Math.pow(1.35, loop || 0)); }
+// per-soldier damage per shot, before the squad's weapon, upgrades and archetype factor
+function dmgPerSoldier(L) { const t = TUNING[L]; return t && t.dmg ? t.dmg : bossHP(L) / (900 + 120 * L); }
+function shotsToKill(L) { return L <= 12 ? 0.95 : L <= 26 ? 1.9 : 2.85; } // one shot early, two mid-game, three late (crate weapons bring it back down)
+function enemyHP(L, loop) { return dmgPerSoldier(L) * shotsToKill(L) * (isBreather(L) ? 0.8 : 1) * Math.pow(1.35, loop || 0); }
+function blockSize(L) { return Math.max(6, 6 + Math.floor(L * 0.6)); }
+function blocksPerLevel(L) { return 8 + Math.floor(L * 0.5); }
+function blockInterval(L) { return 3.5 - 1.5 * Math.min(1, Math.max(0, (L - 1) / 39)); }
+function enemyFloor(L) { return BAL.floors[stageOf(L) - 1]; }
+function weaponMult(lv) { return { dmg: Math.pow(BAL.weaponDmg, lv - 1), rate: Math.pow(BAL.weaponRate, lv - 1) }; }
+// crate rank 0..2 (tires, barrel, crate): higher HP holds a better weapon
+function crateTier(L, rank) { return Math.min(10, 1 + Math.floor((L - 1) * 7 / 39) + rank); }
+// sized to the squad you should have by then: a par squad standing in front of it needs about
+// crateFrac[rank] x 2.5s of fire. Tires are easy, the crate takes commitment.
+function crateHP(L, rank, parN, loop) { return Math.max(10, Math.round(dmgPerSoldier(L) * Math.pow(1.35, loop || 0) * parN * BAL.fireRate * 2.5 * BAL.crateFrac[rank])); }
+function levelTuning(L) { return { L, st: stageOf(L), dmg: dmgPerSoldier(L), bossHP: bossHP(L) }; }
 function endlessSpeed(t) { return Math.pow(1.03, Math.floor(t / 30)); }
 
-if (typeof module !== 'undefined') module.exports = { BAL, TUNING, UPG, UPG_ORDER, stageOf, isStageBoss, isBreather, enemyHP, roadSeconds, speedMult, assaultTimer, rng, niceNum, discValue, cartValue, baseBonus, upLevel, isGemPip, pipCost, upMult, buyUpgrades, bandLabel, applyBand, pumpStep, pumpCost, parPath, makeGateSet, planGates, bestBandIndex, dmgPerSoldier, levelTuning, endlessSpeed, baseDisplayHP };
+if (typeof module !== 'undefined') module.exports = { BAL, TUNING, UPG, UPG_ORDER, stageOf, isStageBoss, isBreather, enemyHP, roadSeconds, speedMult, rng, niceNum, discValue, cartValue, baseBonus, upLevel, isGemPip, pipCost, upMult, buyUpgrades, bandLabel, applyBand, pumpStep, pumpCost, parPath, makeGateSet, planGates, bestBandIndex, dmgPerSoldier, levelTuning, endlessSpeed, bossHP, shotsToKill, blockSize, blocksPerLevel, blockInterval, enemyFloor, weaponMult, crateTier, crateHP };

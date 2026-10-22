@@ -26,20 +26,21 @@ class Pool {
   kill(i) { const j = --this.n; if (i !== j) { const t = this.a[i]; this.a[i] = this.a[j]; this.a[j] = t; } }
   clear() { this.n = 0; }
 }
-// Worst case: 25 guns x ~12 shots/s (beam with every upgrade) x ~0.6s flight, plus orbs that
-// live longer, plus return fire. Sized once; never grown.
-const SHOTS = new Pool(720, () => ({ x: 0, y: 0, z: 0, pz: 0, vx: 0, vz: 0, kind: 0, dmg: 0, w: 0, zEnd: 0, pierce: 0, last: null, last2: null, vis: false, t: 0 }));
+// Worst case: 60 guns x ~8 shots/s (weapon Lv10 + every upgrade + a rate buff) x 1.2s of flight
+// (30 units at 25 u/s) = ~580, plus homing orbs that live a little longer. Sized once; never grown.
+const SHOTS = new Pool(900, () => ({ x: 0, y: 0, z: 0, pz: 0, vx: 0, vz: 0, kind: 0, dmg: 0, w: 0, zEnd: 0, pierce: 0, last: null, last2: null, vis: false, t: 0 }));
 const ESHOTS = new Pool(96, () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 0, t: 0, kind: 0 }));
-const FX = new Pool(1400, () => ({ kind: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 0, col: 0 }));
+const FX = new Pool(2400, () => ({ kind: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 0, col: 0, frames: 0, rot: 0 }));
 const FXK = { spark: 0, flash: 1, casing: 2, puff: 3, fall: 4, ember: 5 };
 const SHOT_KIND = { crossbow: 0, staff: 1, blade: 2, beam: 3 };
 
 const G = {
   mode: 'menu', t: 0, P: 0, camX: 0, timeScale: 1, shake: 0, flash: 0, flashCol: '#fff', push: 0,
   lead: { x: 0, tx: 0, vx: 0 }, N: 1, bodies: [], arch: 'crossbow', guns: [],
-  sets: [], enemies: [], bars: [], barrels: [], coins: [], carts: [], picks: [], hazards: [], splits: [], texts: [], parts: [],
+  sets: [], enemies: [], bars: [], barrels: [], crates: [], coins: [], carts: [], picks: [], hazards: [], splits: [], texts: [], parts: [],
+  weapon: 1,
 };
-for (let i = 0; i < 25; i++) G.guns.push({ t: Math.random() });
+for (let i = 0; i < 60; i++) G.guns.push({ t: Math.random() });
 const hasRelic = id => G.relics && G.relics.includes(id);
 const archDef = () => ARCH[G.arch];
 const up = k => (G.up && G.up[k]) || 0;
@@ -48,10 +49,19 @@ const up = k => (G.up && G.up[k]) || 0;
 // Runs and levels
 // ---------------------------------------------------------------------------
 function newRun(loop) {
-  Store.d.run = { level: 1, relics: [], loop: loop || 0, arch: null };
+  Store.d.run = { level: 1, relics: [], loop: loop || 0, arch: null, weapon: 1 };
   Store.save();
 }
 function stageArch(L, run) { const a = STAGES[stageOf(L) - 1].arch; return a || (run && run.arch) || 'crossbow'; }
+
+// The ONE place a level's starting squad is set: 1 soldier, plus any +1 SOLDIER the player
+// bought with gems for this level (consumed here, so a retry starts at 1 again).
+function startingSquad(opt, endless) {
+  if (endless) return BAL.startSoldiers;
+  const plus = opt.plusOne != null ? opt.plusOne : (Store.d.plusOne || 0);
+  if (!opt.sim) { Store.d.plusOne = 0; Store.save(); }
+  return BAL.startSoldiers + plus;
+}
 
 function startLevel(opt) {
   opt = opt || {};
@@ -62,31 +72,28 @@ function startLevel(opt) {
   G.arch = endless ? (Store.d.endlessArch || 'crossbow') : stageArch(L, run);
   G.relics = endless ? [] : (run.relics || []).slice();
   G.up = Object.assign({ rate: 0, dmg: 0, rev: 0 }, opt.up || Store.d.up);
+  G.weapon = clamp(opt.weapon || (endless ? Store.d.endlessWeapon : run.weapon) || 1, 1, 10);
   const tune = levelTuning(L), A = archDef();
   G.tune = tune;
-  G.dmg = tune.dmg * A.dmgF * (G.stage === 5 ? A.riftDmg : 1);
-  G.baseMax = baseDisplayHP(L, G.loop);
-  G.baseK = G.baseMax / (tune.baseHP * Math.pow(1.35, G.loop)); // damage units -> displayed base HP
-  G.timerMax = tune.timer;
+  G.dmg = tune.dmg; // every squad fires 3 shots/s for the same raw damage; the archetypes differ in perks
   G.v = BAL.runSpeed * speedMult(L);
   G.Lr = endless ? 1e9 : roadSeconds(L) * G.v;
   G.P = 0; G.camX = 0; G.lt = 0;
   G.lead = { x: 0, tx: 0, vx: 0 };
-  const plus = endless ? 0 : (opt.plusOne != null ? opt.plusOne : (Store.d.plusOne || 0));
-  if (!endless && !opt.sim) { Store.d.plusOne = 0; Store.save(); }
-  G.N = BAL.startSoldiers + plus; G.Nmax = G.N; G.punch = 0; G.startN = G.N;
-  G.sets = []; G.enemies = []; G.bars = []; G.barrels = []; G.coins = []; G.carts = []; G.picks = []; G.hazards = []; G.splits = []; G.texts = []; G.parts = [];
+  G.N = startingSquad(opt, endless); G.Nmax = G.N; G.punch = 0; G.startN = G.N;
+  G.sets = []; G.enemies = []; G.bars = []; G.barrels = []; G.crates = []; G.coins = []; G.carts = []; G.picks = []; G.hazards = []; G.splits = []; G.texts = []; G.parts = [];
   SHOTS.clear(); ESHOTS.clear(); FX.clear();
-  for (const g of G.guns) g.t = Math.random() / A.rate;
+  for (const g of G.guns) g.t = Math.random() / BAL.fireRate; // never in sync
   G.buff = null; G.debuff = null; G.patientT = 0; G.shotN = 0; G.efT = 0; G.streamEnd = 0;
   G.vanguardAcc = 0; G.medicLeft = endless ? 0 : shopLvl('medic'); G.rallyUsed = false;
-  G.stats = { coins: 0, kills: 0, gems: 0, relic: false, lost: 0, flips: 0, pumped: 0, blasts: 0, dodged: 0, hits: 0, arrive: 0 };
-  G.phase = 'run'; G.base = null; G.boss = null; G.split = null; G.bossIntro = 0;
+  G.stats = { coins: 0, kills: 0, gems: 0, relic: false, lost: 0, flips: 0, pumped: 0, blasts: 0, dodged: 0, hits: 0, arrive: 0, crates: 0, cratesMissed: 0, blocks: 0, spawned: 0 };
+  G.phase = endless ? 'run' : 'intro'; G.base = null; G.boss = null; G.split = null; G.bossIntro = 0;
+  G.blockT = 1.5; G.floorT = 0; G.loneSide = 1; G.blocksLeft = endless ? Infinity : blocksPerLevel(L);
   G.timeScale = 1; G.slowT = 0; G.shake = 0; G.flash = 0; G.push = 0; G.recoil = 0;
   G.tut = (L === 1 && !endless && !Store.d.tut.base && !opt.sim) ? { step: 0, t: 0 } : null;
-  G.banner = endless ? { title: 'ENDLESS', sub: 'HOW FAR CAN YOU CLIMB', t: 0, max: 2.2 } : { title: 'LEVEL ' + L, sub: STAGES[G.stage - 1].short.toUpperCase() + ' · ' + A.squad, t: 0, max: 2.2 };
+  G.banner = endless ? { title: 'ENDLESS', sub: 'HOW FAR CAN YOU CLIMB', t: 0, max: 2.2 } : null;
   G.rnd = opt.rnd || Math.random;
-  if (endless) { G.genZ = 0; G.endSet = 0; extendEndless(); } else buildLevel();
+  if (endless) { G.genZ = 0; G.endSet = 0; extendEndless(); } else { buildLevel(); startBoss(); }
   layoutBodies(true);
   G.mode = 'play';
   if (!opt.sim) {
@@ -94,7 +101,6 @@ function startLevel(opt) {
     if (typeof GFX !== 'undefined') GFX.onLevel();
   }
 }
-
 function roleWeights(L) {
   const prof = G.stage === 5 ? RIFT_PROFILES[L] : null;
   const w = { brute: L >= 4 ? 0.1 : 0, shielder: L >= 9 ? 0.1 : 0, leaper: L >= 13 ? 0.06 : 0, runner: 0.3, normal: 0 };
@@ -123,11 +129,13 @@ function parAt(z) {
   }
   return S[S.length - 1].par;
 }
-function formHalfFor(n) { n = Math.min(n, BAL.drawCap); const rows = Math.ceil((Math.sqrt(8 * n + 1) - 1) / 2); return 0.35 + rows * 0.2; }
-
-// Lay out gate sets, hazards behind bands, the crowd, coins and carts.
+// The squad is a dense rectangular block that widens and deepens with the count.
+// Up to 120 are drawn one mesh each; past that the block's footprint keeps widening.
+function formSpacing(n) { return 0.52 * (n > BAL.drawCap ? Math.min(1.5, Math.sqrt(n / BAL.drawCap)) : 1); }
+function formCols(n) { const d = Math.min(n, BAL.drawCap); return clamp(Math.ceil(Math.sqrt(d * 1.6)), 1, 16); }
+function formHalfFor(n) { return Math.max(0.35, (formCols(n) - 1) / 2 * formSpacing(n) + 0.3); }
 function buildLevel() {
-  const L = G.level, v = G.v, Lr = G.Lr, st = G.stage, rnd = G.rnd;
+  const L = G.level, v = G.v, Lr = G.Lr, rnd = G.rnd;
   const plan = planGates(L, rnd);
   const first = 9 * v, last = Lr - 5 * v;
   const slots = plan.filter(s => !s.overlap).length;
@@ -137,50 +145,31 @@ function buildLevel() {
     prevZ = s.z;
     addSet(s);
   }
-  // the crowd: total HP per metre follows the par squad's fire, packed into a moving mass
-  const A = archDef(), vClose = v + 3.4;
-  const hp = enemyHP(L, G.loop), W = roleWeights(L);
-  // zm is where an enemy MEETS the squad (they walk toward you); it spawns further out
-  let cx = 0, cxT = 0;
-  for (let zm = 3 * v; zm < Lr - 1.5 * v; zm += 1) {
-    if (G.sets.some(s => zm > s.z - 4 && zm < s.z + 3)) continue; // keep the band faces readable
-    if (G.splits.some(s => zm > s.z0 - 2 && zm < s.z1)) continue; // split stretches get their own swarm
-    const n = parAt(zm);
-    const dps = n * A.rate * G.dmg * G.tune.uRef;
-    const perM = BAL.crowd * BAL.crowdStage[st - 1] * dps * BAL.crowdSpread / vClose / hp;
-    const lone = zm < G.sets[0].z; // before the first gate: one soldier, a few stragglers
-    let c = perM + rnd() * 0.999;
-    if (Math.abs(zm - cxT) < 1) { cxT = zm + 15 + rnd() * 20; cx = (rnd() * 2 - 1) * 2.6; }
-    const sp = Math.min(ROAD - 0.5, 1.2 + Math.sqrt(perM) * 2.6);
-    while (c >= 1) {
-      c -= 1;
-      let role = lone ? 'normal' : pickRole(W, rnd());
-      if (n < 15 && role !== 'runner') role = 'normal'; // no heavies while the squad is still tiny
-      const x = clamp(cx + (rnd() * 2 - 1) * sp, -4.6, 4.6);
-      const speed = ENEMY_TYPES[role].speed * 0.8;
-      const z = (zm + rnd() * 0.8) * (v + speed) / v;
-      addEnemy(role, x, z, lone ? hp * 0.3 : hp, false);
-    }
+  // weapon crates: 3-5 per level, HP printed on the face; the higher the HP, the better the gun
+  const n = 3 + Math.floor(rnd() * 3), ranks = [2, 1, 0, 1, 0].slice(0, n);
+  shuffleR(ranks, rnd);
+  for (let i = 0; i < n; i++) {
+    let z = (0.16 + 0.7 * (i + 0.2 + rnd() * 0.6) / n) * Lr;
+    for (let t = 0; t < 6 && G.sets.some(s => Math.abs(s.z - z) < 9); t++) z += 10;
+    const rank = ranks[i], next = G.sets.find(s => s.z > z), hp = crateHP(L, rank, next ? next.par : 46, G.loop);
+    // in the middle of the road, where even a small squad can stand in front of it
+    G.crates.push({ x: (rnd() * 2 - 1) * 1.3, z, rank, tier: crateTier(L, rank), kind: ['tires', 'barrel', 'crate'][rank], hp, max: hp, dead: false, flash: 0, acc: 0, accT: 0 });
   }
-  // elites: a few crowned heavies from Stage 3 on
-  if (st >= 3) for (let i = 0; i < 3; i++) { const zm = (0.4 + 0.2 * i) * Lr; addEnemy('brute', (rnd() * 2 - 1) * 3, zm * (v + 1.6) / v, hp, true); }
-  // coin discs: singles and short lines in lanes, some inside the crowd
+  // coin discs in lanes, a cart at the edge for steering wide
   const val = discValue(L, G.loop);
   for (let i = 0; i < 14; i++) {
     const z = (0.12 + 0.82 * (i + rnd() * 0.6) / 14) * Lr;
-    if (G.sets.some(s => Math.abs(s.z - z) < 6)) continue;
+    if (G.sets.some(s => Math.abs(s.z - z) < 6) || G.crates.some(c => Math.abs(c.z - z) < 4)) continue;
     G.coins.push({ x: (rnd() * 2 - 1) * 4, z, val, taken: false, spin: rnd() * 6 });
   }
-  if (rnd() < 0.6) { // a cart at the edge: steer wide for a bundle
+  if (rnd() < 0.6) {
     const z = (0.35 + rnd() * 0.4) * Lr;
     G.carts.push({ x: rnd() < 0.5 ? -4.2 : 4.2, z, val: cartValue(L, G.loop), taken: false });
   }
   G.runnerAt = L >= 9 ? (0.25 + rnd() * 0.45) * Lr : Infinity;
   G.goldAt = L % 3 === 0 ? (0.3 + rnd() * 0.4) * Lr : Infinity;
   G.corruptAt = L >= 33 ? (0.15 + rnd() * 0.15) * Lr : Infinity;
-  G.baseZ = Lr + 11; // inside every weapon's reach
 }
-// a planned set becomes bands on the road (+ whatever hides behind them)
 function addSet(s) {
   const n = s.bands.length, rnd = G.rnd;
   const A = archDef();
@@ -191,25 +180,13 @@ function addSet(s) {
     s.bands = order;
     const z0 = s.z - 8.5 * G.v, z1 = s.z + 4;
     G.splits.push({ z0, z1, side, set: s });
-    // the swarm: more than the open road carries, packed into one half (sized at meeting points)
-    const hp = enemyHP(G.level, G.loop), v = G.v, A2 = archDef();
-    const perM = 1.4 * BAL.crowd * BAL.crowdStage[G.stage - 1] * BAL.crowdSpread * s.par * A2.rate * G.dmg * G.tune.uRef / (v + 3.4) / hp;
-    let c = 0;
-    for (let zm = z0 + 3; zm < s.z - 3; zm += 1) {
-      c += perM;
-      while (c >= 1) {
-        c -= 1;
-        const role = rnd() < 0.6 ? 'runner' : 'normal', sp = ENEMY_TYPES[role].speed * 0.8;
-        const e = addEnemy(role, side * (1 + rnd() * 3.4), zm * (v + sp) / v, hp, false);
-        e.strafe = rnd() * 2 - 1; e.half = side;
-      }
-    }
+    // the swarm side gets its own enemy block when the divider starts (updateSplit), and coins
     for (let i = 0; i < 6; i++) G.coins.push({ x: side * (1.2 + rnd() * 3), z: z0 + 10 + i * (s.z - z0 - 14) / 6, val: discValue(G.level, G.loop), taken: false, spin: 0 });
   }
   const w = ROAD * 2 / n;
   s.bands.forEach((b, i) => {
     b.x0 = -ROAD + i * w; b.x1 = b.x0 + w;
-    b.cost = pumpCost(s.par, b, A.range, G.v);
+    b.cost = pumpCost(s.par, b, BAL.shotRange, G.v);
     b.acc = 0; b.accT = 0;
   });
   s.done = false; s.picked = -1;
@@ -217,7 +194,7 @@ function addSet(s) {
   // hazards behind bands, telegraphed: an explosive barrel or a barricade with HP
   if (G.level >= 3 && s.kind === 'choice' && s.i >= 2 && rnd() < 0.45) {
     const bi = Math.floor(rnd() * n), b = s.bands[bi];
-    const commit = Math.max(s.par, BAL.pumpFloor) * (A.range / G.v) * A.rate * G.dmg * G.tune.uRef;
+    const commit = Math.max(s.par, BAL.pumpFloor) * (BAL.shotRange / G.v) * BAL.fireRate * G.dmg * weaponMult(G.weapon).dmg;
     if (rnd() < 0.55) G.barrels.push({ x: (b.x0 + b.x1) / 2, z: s.z + 4.5, hp: commit * 0.9, max: commit * 0.9, dead: false, flash: 0, acc: 0, accT: 0, blast: 3.4 });
     else addBarricade(b.x0 + 0.2, b.x1 - 0.2, s.z + 5, commit * 0.75);
   }
@@ -225,7 +202,7 @@ function addSet(s) {
 function addEnemy(kind, x, z, hp, elite, o) {
   const T = ENEMY_TYPES[kind];
   const look = (o && o.look) || STAGE_LOOKS[G.stage - 1][kind] || 'slime';
-  const h = Math.max(1, hp * T.hp * (elite ? 3 : 1));
+  const h = hp * T.hp * (elite ? 3 : 1);
   const e = {
     kind, look, x, z, y: 0, hp: h, maxHp: h, r: T.r * (elite ? 1.25 : 1), speed: T.speed * 0.8, kill: T.kill,
     elite: !!elite, active: false, t: Math.random() * 5, flash: 0, inv: 0, invT: 1.5 + Math.random() * 1.5,
@@ -254,14 +231,6 @@ function extendEndless() {
     s.z = z0 + (i === 0 ? 9 * v : 9 * v);
     s.par = i === 0 ? 1 : par;
     addSet(s);
-    const L = 40 + Math.floor(G.endT / 45);
-    const hp = enemyHP(L), A = archDef(), W = roleWeights(39);
-    for (let z = Math.max(z0 + 2 * v, s.z - 9 * v + 3); z < s.z - 3; z += 1) {
-      const n = par;
-      const perM = BAL.crowd * BAL.crowdSpread * (1 + harsh) * n * A.rate * G.dmg * G.tune.uRef / (v + 3.4) / hp;
-      let c = perM + rnd();
-      while (c >= 1) { c -= 1; addEnemy(pickRole(W, rnd()), clamp((rnd() * 2 - 1) * 4.2, -4.6, 4.6), z + rnd(), hp, false); }
-    }
     if (rnd() < 0.7) G.coins.push({ x: (rnd() * 2 - 1) * 4, z: s.z - 4 * v, val: discValue(40), taken: false, spin: 0 });
     G.genZ = s.z + 5;
   }
@@ -274,18 +243,16 @@ function extendEndless() {
 // ---------------------------------------------------------------------------
 function spreadMult() { return (G.buff && G.buff.id === 'spread' ? 1.35 : 1) * (G.debuff && G.debuff.id === 'bunch' ? 0.6 : 1); }
 function formHalf() { return formHalfFor(G.N) * spreadMult(); }
+// Kai is soldier #1: a squad of N draws Kai plus N-1 soldiers behind him (so a level opens on Kai alone)
 function layoutBodies(snap) {
-  const n = Math.min(G.N, BAL.drawCap), sp = 0.52 * spreadMult(), dz = 0.5;
+  const n = Math.min(Math.max(0, G.N - 1), BAL.drawCap), sp = formSpacing(G.N) * spreadMult(), dz = 0.5 * Math.min(1.3, formSpacing(G.N) / 0.52);
+  const cols = formCols(G.N);
   const old = G.bodies, out = [];
-  let row = 1, i = 0;
-  while (i < n) {
-    const inRow = Math.min(row + 1, n - i);
-    for (let k = 0; k < inRow; k++, i++) {
-      const ox = (k - (inRow - 1) / 2) * sp, oz = -row * dz - 0.2;
-      const prev = old[i];
-      out.push({ ox, oz, row, x: prev && !snap ? prev.x : G.lead.x + ox, ph: prev ? prev.ph : Math.random() * TAU, pop: snap ? 0 : 1, delay: row * 0.04 });
-    }
-    row++;
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / cols), inRow = Math.min(cols, n - row * cols), k = i - row * cols;
+    const ox = (k - (inRow - 1) / 2) * sp, oz = -(row + 1) * dz - 0.2;
+    const prev = old[i];
+    out.push({ ox, oz, row: row + 1, x: prev && !snap ? prev.x : G.lead.x + ox, ph: prev ? prev.ph : Math.random() * TAU, pop: snap ? 0 : 1, delay: row * 0.04 });
   }
   G.bodies = out;
 }
@@ -319,7 +286,7 @@ function loseSoldiers(n) {
 // kill the soldiers standing inside [x0, x1] (boss strikes delete whoever is in the zone)
 function killInZone(test, cap) {
   const bodies = G.bodies;
-  if (!bodies.length) return 0;
+  if (!bodies.length) { if (test(G.lead.x)) { loseSoldiers(G.N); return 1; } return 0; } // Kai alone
   let inside = 0;
   for (const b of bodies) if (test(b.x)) inside++;
   if (test(G.lead.x) && inside === 0) inside = 1;
@@ -330,7 +297,6 @@ function killInZone(test, cap) {
 function squadDown() {
   if (G.mode !== 'play') return;
   if (G.endless) { endlessOver(); return; }
-  if (G.phase === 'assault') { baseFailed(); return; }
   G.mode = 'failed';
   bankCoins();
   SFX.fail(); Gunfire.stop();
@@ -358,12 +324,13 @@ function dmgBonus(vsBase) {
   return Math.min(2.5, b);
 }
 function shotDamage(vsBase) {
-  let m = upMult('dmg', up('dmg')) * (1 + dmgBonus(vsBase));
+  let m = upMult('dmg', up('dmg')) * weaponMult(G.weapon).dmg * (1 + dmgBonus(vsBase));
   if (G.debuff && G.debuff.id === 'dmg') m *= 0.85;
   return G.dmg * m;
 }
+// 3 shots/s per soldier before upgrades; the weapon level and Fire Rate upgrades raise it
 function fireRate() {
-  let r = archDef().rate * (G.stage === 5 ? archDef().riftRate : 1) * upMult('rate', up('rate'));
+  let r = BAL.fireRate * upMult('rate', up('rate')) * weaponMult(G.weapon).rate;
   if (G.buff && G.buff.id === 'rate') r *= 1 + 0.15 * G.buff.mag;
   if (G.debuff && G.debuff.id === 'rate') r *= 0.85;
   return r;
@@ -388,7 +355,7 @@ function bankCoins() {
   Store.save();
 }
 const pierceBuff = () => !!(G.buff && G.buff.id === 'pierce');
-function reach() { return archDef().range + (pierceBuff() ? 2 : 0); }
+function reach() { return BAL.shotRange + (pierceBuff() ? 2 : 0); }
 
 function alive(t) { return t && !t.dead; }
 // frontal shields: flank them. Rift shield walls can't be flanked.
@@ -400,37 +367,42 @@ function shieldBlocks(e, x) { return e.shield && (e.look === 'shieldcrawler' || 
 // (each shot carries N/25 soldiers' damage) and the renderer draws a stream.
 // ---------------------------------------------------------------------------
 function guns() { return Math.min(G.N, BAL.gunCap); }
+// Every soldier fires on its own timer (offset at spawn, jittered each shot: never in sync), from
+// its own place in the block, so the volley fans across the whole formation. Up to 60 soldiers
+// each gun is one soldier; past 60, 60 representative soldiers spread across the block fire
+// for everyone (each shot carries N/60 soldiers' damage and draws wider and brighter).
 function updateGuns(dt, firing) {
   const n = guns();
   if (!firing || !n) return;
   const rate = fireRate(), A = archDef();
   const w = G.N > BAL.gunCap ? G.N / BAL.gunCap : 1;
-  const dmg = shotDamage(G.phase === 'assault') * w;
-  const kind = SHOT_KIND[A.id], range = reach();
+  const dmg = shotDamage(G.phase !== 'run') * w;
+  const kind = SHOT_KIND[A.id], nb = Math.max(1, G.bodies.length);
   for (let i = 0; i < n; i++) {
     const gun = G.guns[i];
     gun.t -= dt;
     if (gun.t > 0) continue;
-    gun.t += (0.85 + Math.random() * 0.3) / rate;
+    gun.t += (0.8 + Math.random() * 0.4) / rate;
     if (gun.t < 0) gun.t = Math.random() / rate;
-    const b = G.bodies[i % Math.max(1, G.bodies.length)];
+    const b = G.N > BAL.gunCap ? G.bodies[Math.floor((i + 0.5) * nb / n)] : i < G.bodies.length ? G.bodies[i] : null; // the last gun is Kai's
     const s = SHOTS.spawn();
     if (!s) continue; // pool exhausted: skip the shot rather than grow
     const bx = b ? b.x : G.lead.x, bz = G.P + (b ? b.oz : 0);
-    s.kind = kind; s.x = bx + (kind === 2 ? 0 : rand(-0.06, 0.06)); s.z = bz + 0.5; s.pz = s.z;
-    s.y = kind === 0 ? 1.0 : kind === 1 ? 1.35 : 0.95;
-    s.vz = A.speed; s.vx = 0; s.dmg = dmg; s.w = w / rate; s.zEnd = G.P + range; s.t = 0;
-    s.pierce = kind === 1 ? 1 + (pierceBuff() ? 1 : 0) : kind === 3 ? 99 : kind === 2 ? 2 : (pierceBuff() ? 1 : 0);
-    s.last = null; s.last2 = null;
+    s.kind = kind; s.x = bx + 0.16; s.z = bz + 0.55; s.pz = s.z; s.y = 0.78;
+    // a slight outward fan: the volley covers the block's full width and a little beyond by mid-range
+    s.vz = BAL.shotSpeed; s.vx = (b ? b.ox : 0) / Math.max(0.5, formHalf()) * 0.9 + rand(-0.15, 0.15); s.dmg = dmg; s.w = w / rate; s.zEnd = reach(); s.t = 0; // range is measured from the squad, which is moving too
+    // archetype perks: crossbow bolts lob over frontal shields, orbs bend and pierce one,
+    // blades cleave the next body, beams pierce two (armor stops them)
+    s.pierce = kind === 1 ? 1 : kind === 2 ? 1 : kind === 3 ? 2 : 0;
+    if (pierceBuff()) s.pierce++;
+    s.last = null; s.last2 = null; s.vis = true;
     G.shotN++;
-    s.vis = G.N <= BAL.gunCap || G.shotN % 3 === 0;
-    // muzzle flash on every shot; casings now and then
-    fx(FXK.flash, s.x, s.y, s.z + 0.15, 0, 0, 0, 1 / 60, kind === 3 ? 0.9 : 0.75, kind === 1 ? 0xffb35a : kind === 3 ? 0x9ff6ff : 0xfff2a0);
-    if (kind === 0 || kind === 3) if (Math.random() < 0.35) fx(FXK.casing, s.x + 0.15, 0.9, bz, rand(1.5, 3), rand(2, 4), rand(-1.5, 0), 0.5, 0.06, 0xe8b84a);
+    // muzzle flash on every shot: 0.5 units, exactly 2 rendered frames, random rotation
+    fx(FXK.flash, s.x, s.y, s.z + 0.1, 0, 0, 0, 0.25, 0.5, 0xfff2b0);
+    if (Math.random() < 0.3) fx(FXK.casing, bx + 0.2, 0.8, bz, rand(1.5, 3), rand(2, 4), rand(-1.5, 0), 0.5, 0.06, 0xe8b84a);
   }
   G.recoil = Math.min(1, (G.recoil || 0) + dt * 6);
 }
-// sorted enemy list for fast segment queries
 let ESORT = [];
 function sortEnemies() { ESORT = G.enemies; ESORT.sort((a, b) => a.z - b.z); }
 function firstIdx(z) { let lo = 0, hi = ESORT.length; while (lo < hi) { const m = (lo + hi) >> 1; if (ESORT[m].z < z) lo = m + 1; else hi = m; } return lo; }
@@ -442,6 +414,7 @@ function updateShots(dt) {
     const s = SHOTS.a[i];
     s.t += dt;
     s.pz = s.z;
+    if (s.kind !== 1) s.x += s.vx * dt;
     if (s.kind === 1) { // orbs bend toward the nearest target ahead
       let best = null, bd = 2.6;
       for (let k = firstIdx(s.z); k < ESORT.length && ESORT[k].z < s.z + 12; k++) { const e = ESORT[k]; if (e.dead || !e.active || e === s.last || e.shield) continue; const d = Math.abs(e.x - s.x); if (d < bd) { bd = d; best = e; } }
@@ -455,8 +428,13 @@ function updateShots(dt) {
       if (set.done || set.z <= s.pz || set.z > s.z) continue;
       for (const b of set.bands) if (s.x >= b.x0 && s.x < b.x1) { pumpBand(set, b, s.w * (s.kind === 1 ? 1 : 1), s.dmg); break; }
     }
+    // weapon crates: shoot them down before you pass them
+    for (const c of G.crates) {
+      if (c.dead || c.z <= s.pz - 0.6 || c.z > s.z + 0.6 || Math.abs(c.x - s.x) > 0.85) continue;
+      hitCrate(c, s.dmg, s.x); dead = true; break;
+    }
     // barrels and barricades
-    for (const br of G.barrels) {
+    if (!dead) for (const br of G.barrels) {
       if (br.dead || br.z <= s.pz - 0.5 || br.z > s.z + 0.5 || Math.abs(br.x - s.x) > 0.75) continue;
       hitBarrel(br, s.dmg); dead = true; break;
     }
@@ -466,7 +444,7 @@ function updateShots(dt) {
     }
     // enemies in the swept segment
     if (!dead) {
-      const r = s.kind === 2 ? 1.0 : s.kind === 1 ? 0.25 : 0.12;
+      const r = s.kind === 2 ? 1.0 : s.kind === 1 ? 0.25 : 0.22;
       for (let k = firstIdx(s.pz - 0.6); k < ESORT.length; k++) {
         const e = ESORT[k];
         if (e.z > s.z + 0.6) break;
@@ -482,15 +460,13 @@ function updateShots(dt) {
         if (s.kind === 2 && s.pierce < 0) { dead = true; break; }
       }
     }
-    // base wall / boss
-    if (!dead && G.phase === 'assault' && G.base && !G.base.dead) {
-      if (G.boss) {
-        const bz = G.boss.z - 1.2;
-        if (s.z >= bz && bossHitX(s.x)) { hitBoss(s.dmg, s.x, bz); dead = true; }
-      } else if (s.z >= G.base.z - 0.8) { hitBase(s.dmg, s.x); dead = true; }
+    // the boss: always on the road, in reach once it is within 30 units
+    if (!dead && G.boss && !G.boss.dead) {
+      const bz = G.boss.z - 1.4;
+      if (s.z >= bz && bossHitX(s.x)) { hitBoss(s.dmg, s.x, bz); dead = true; }
     }
-    if (!dead && s.z > s.zEnd) dead = true;
-    if (dead) { if (s.z > G.P) streamEnd = Math.max(streamEnd, Math.min(s.z, s.zEnd)); SHOTS.kill(i); }
+    if (!dead && s.z - G.P > s.zEnd) dead = true;
+    if (dead) { if (s.z > G.P) streamEnd = Math.max(streamEnd, Math.min(s.z, G.P + s.zEnd)); SHOTS.kill(i); }
   }
   G.streamEnd = lerp(G.streamEnd || G.P + reach(), streamEnd > G.P ? streamEnd : G.P + reach(), 1 - Math.exp(-dt * 10));
   // return fire
@@ -519,6 +495,7 @@ function enemyFire(x, z, tx, kind, speed) {
 // ---------------------------------------------------------------------------
 function pumpBand(set, b, pts, dmg) {
   b.acc += dmg; // the floating number shows damage like any target
+  if (Math.random() < 0.5) impact(clamp(G.lead.x, b.x0 + 0.3, b.x1 - 0.3), 1.2, set.z, set.bands.length && b.red ? 0xff6a7a : 0x9dff9a);
   // a squad bigger than par pumps no faster than par; a smaller one pumps slower
   pts *= Math.max(set.par, BAL.pumpFloor) / Math.max(G.N, set.par, BAL.pumpFloor);
   b.pts += pts;
@@ -528,7 +505,7 @@ function pumpBand(set, b, pts, dmg) {
     const r = pumpStep(b);
     b.pop = 1;
     if (r === 'flip') {
-      b.cost = pumpCost(set.par, b, archDef().range, G.v);
+      b.cost = pumpCost(set.par, b, BAL.shotRange, G.v);
       G.stats.flips++;
       SFX.flip(); Haptic.buzz(20);
       G.flash = Math.max(G.flash, 0.22); G.flashCol = '#5cff7a';
@@ -567,7 +544,7 @@ function passSet(set) {
 function damageEnemy(e, dmg, x) {
   if (e.dead) return;
   e.hp -= dmg; e.flash = 0.06; e.acc += dmg;
-  spark(x == null ? e.x : x, 0.9, e.z - e.r * 0.6, 3, 0xfff2c0, 3);
+  impact(x == null ? e.x : x, 0.8, e.z - e.r * 0.6, 0xfff2c0);
   if (e.hp <= 0) {
     if (e.kind === 'treasure') { gainCoins(cartValue(G.level, G.loop), e.x, e.z); if (G.level >= 10 && Math.random() < 0.25) { G.stats.relic = true; floatText(e.x, e.z, 3.5, 'RELIC FOUND', '#c9a8ff', 22); } }
     else if (e.elite) for (let i = 0; i < 2; i++) G.coins.push({ x: clamp(e.x + rand(-0.8, 0.8), -4.4, 4.4), z: e.z + rand(-0.5, 1), val: discValue(G.level, G.loop), taken: false, spin: 0 });
@@ -584,16 +561,34 @@ function killEnemy(e) {
 function damageBar(b, dmg, x) {
   if (b.dead) return;
   b.hp -= dmg; b.flash = 0.06; b.acc += dmg;
-  spark(x, 0.9, b.z - 0.35, 2, 0xd8d2c4, 3);
+  impact(x, 0.8, b.z - 0.35, 0xd8d2c4);
   if (b.hp <= 0) {
     b.dead = true; flushAcc(b, (b.x0 + b.x1) / 2, b.z, 1.6);
     SFX.crumble();
     spark((b.x0 + b.x1) / 2, 0.5, b.z, 22, 0xb9b2a4, 6);
   }
 }
+const WEAPON_NAMES = ['', 'BOLT RIFLE', 'TWIN BOLT', 'CARBINE', 'BATTLE RIFLE', 'BURST RIFLE', 'MARKSMAN RIFLE', 'ASSAULT RIFLE', 'ROTARY RIFLE', 'HEAVY REPEATER', 'HEAVY AUTOMATIC'];
+function hitCrate(c, dmg, x) {
+  c.hp -= dmg; c.flash = 0.06; c.acc += dmg;
+  impact(x, 0.9, c.z - 0.6, 0xffd23d);
+  if (c.hp > 0) return;
+  c.dead = true; G.stats.crates++;
+  flushAcc(c, c.x, c.z, 2);
+  SFX.crumble(); SFX.buff(); Haptic.buzz(20);
+  spark(c.x, 1, c.z, 26, 0xffd23d, 7);
+  if (c.tier > G.weapon) {
+    G.weapon = c.tier;
+    if (!G.endless && Store.d.run) { Store.d.run.weapon = G.weapon; Store.save(); }
+    else if (G.endless) Store.d.endlessWeapon = G.weapon;
+    floatText(G.lead.x, G.P, 4.4, 'Lv ' + G.weapon + ' ' + WEAPON_NAMES[G.weapon], '#ffd23d', 26);
+    G.flash = Math.max(G.flash, 0.25); G.flashCol = '#ffd23d';
+    if (typeof GFX !== 'undefined' && !G.sim) GFX.squadKey = ''; // the gun in every soldier's hands changes
+  } else floatText(c.x, c.z, 2.6, 'Lv ' + c.tier + ' (have Lv ' + G.weapon + ')', '#dddddd', 16);
+}
 function hitBarrel(br, dmg) {
   br.hp -= dmg; br.flash = 0.06; br.acc += dmg;
-  spark(br.x, 0.8, br.z - 0.5, 2, 0xffd23d, 3);
+  impact(br.x, 0.8, br.z - 0.5, 0xffd23d);
   if (br.hp <= 0) explodeBarrel(br);
 }
 function explodeBarrel(br) {
@@ -686,20 +681,11 @@ function moveEnemies(dt) {
     e.t += dt; e.flash = Math.max(0, e.flash - dt);
     tickAcc(e, dt, e.x, e.z, 1.7 * (LOOK_SCALE[e.look] || 1));
     const d = e.z - G.P;
-    if (!e.active) {
-      if (d >= 60) continue;
-      e.active = true;
-      // a squad well under par meets a thinner crowd: falling behind should hurt, not snowball
-      if (!G.endless && e.kind !== 'treasure' && !e.elite) {
-        const k = G.N / (Math.max(BAL.pumpFloor, parAt(G.P + 18)) * BAL.ddaAt);
-        if (k < 1 && Math.random() > Math.max(0.35, k)) { e.dead = true; continue; }
-      }
-    }
+    if (!e.active) { if (d >= 80) continue; e.active = true; }
     if (e.half) { // split-road swarms roam their own half
       if (Math.random() < dt * 1.5) e.strafe = rand(-1, 1);
       e.x = clamp(e.x + e.strafe * 3.5 * dt, e.half < 0 ? -4.6 : 0.8, e.half < 0 ? -0.8 : 4.6);
     } else if (e.strafe) { const fast = e.look === 'crawler'; if (Math.random() < dt * (fast ? 2.2 : 0.8)) e.strafe = rand(-1, 1); e.x = clamp(e.x + e.strafe * (e.look === 'wisp' ? 2.2 : fast ? 5 : 3.2) * dt, -4.6, 4.6); }
-    else if (d < 22 && d > 2) e.x += clamp(G.lead.x - e.x, -1, 1) * 0.5 * dt; // the mob leans toward you
     if (e.look === 'crawler' || e.look === 'bigcrawler') {
       const tLeft = d / (G.v + e.speed);
       e.invT -= dt;
@@ -742,7 +728,7 @@ function resolveContacts() {
     if (e.kind === 'treasure') continue;
     if (e.half && G.split && e.half !== G.split.mine) { if (e.z - G.P < -3) e.dead = true; continue; } // the divider is between you
     if (e.z - G.P < 0.5) {
-      if (Math.abs(e.x - G.lead.x) < fh + e.r) { contact(e); e.dead = true; }
+      if (Math.abs(e.x - G.lead.x) < fh + e.r * 0.5) { contact(e); e.dead = true; }
       else if (e.z - G.P < -3) e.dead = true;
     }
   }
@@ -763,6 +749,10 @@ function resolveContacts() {
     if (br.dead) continue;
     if (br.z - G.P < 0.6 && br.z - G.P > -1 && Math.abs(br.x - G.lead.x) < fh + 0.5) explodeBarrel(br); // walked into it
     else if (br.z - G.P < -2) br.dead = true;
+  }
+  for (const c of G.crates) { // a crate you didn't shoot down is gone once you pass it
+    if (c.dead || c.z - G.P > -0.5) continue;
+    c.dead = true; c.missed = true; G.stats.cratesMissed++;
   }
 }
 function contact(e) {
@@ -797,7 +787,10 @@ function updateCoins(dt) {
 }
 function updateSplit() {
   const s = G.splits.find(s => G.P >= s.z0 && G.P < s.z1);
-  if (s && !G.split) { G.split = s; s.mine = G.lead.x < 0 ? -1 : 1; G.stats.split = s.mine === s.side ? 'swarm' : 'gates'; }
+  if (s && !G.split) {
+    G.split = s; s.mine = G.lead.x < 0 ? -1 : 1; G.stats.split = s.mine === s.side ? 'swarm' : 'gates';
+    spawnBlock(s.side); spawnBlock(s.side); // the swarm side fills up as the divider starts
+  }
   if (!s) G.split = null;
 }
 function updateHazards(dt) {
@@ -833,57 +826,6 @@ function updateReturnFire(dt) {
 // ---------------------------------------------------------------------------
 // Base assault / boss
 // ---------------------------------------------------------------------------
-function startAssault() {
-  G.phase = 'assault';
-  G.arriveN = G.N; G.stats.arrive = G.N;
-  for (const e of G.enemies) if (!e.dead) { e.dead = true; worldPuff(e.x, e.z, 0.6, 0xffffff); }
-  G.enemies = []; G.picks = []; G.hazards = []; ESHOTS.clear();
-  const boss = isStageBoss(G.level);
-  G.base = { hp: G.baseMax, max: G.baseMax, timer: G.timerMax, z: G.baseZ, shake: 0, boss, barT: 1.2, defT: 0, acc: 0, accT: 0, dmgLog: [], raw: 0 };
-  if (boss) startBoss();
-  else G.banner = { title: 'BREAK THE BASE', sub: G.timerMax + ' SECONDS', t: 0, max: 1.4 };
-}
-function hitBase(dmg, x) {
-  const B = G.base;
-  B.raw += dmg; dmg *= G.baseK;
-  B.hp -= dmg; B.shake = 4; B.acc += dmg;
-  if (Math.random() < 0.5) spark(x, rand(0.6, 3), B.z - 0.8, 3, 0xffd6a0, 4);
-  G.shake = Math.max(G.shake, 1.5);
-  SFX.baseHit();
-  if (B.hp <= 0 && !G.noBreak) { B.hp = 0; baseDown(); }
-}
-function updateAssault(dt) {
-  const B = G.base;
-  if (G.bossIntro > 0) { G.bossIntro -= dt; return; }
-  B.timer -= dt; B.shake = Math.max(0, B.shake - dt * 30);
-  tickAcc(B, dt, G.lead.x + rand(-1, 1), (G.boss ? G.boss.z : B.z) - 1, 3.5);
-  B.dmgLog.push(B.raw); // raw damage, for the balance sim
-  if (!B.boss) {
-    // defenders on the wall: aimed tracers you can steer away from, plus telegraphed barrages
-    B.defT += dt * (0.6 + G.stage * 0.2);
-    while (B.defT >= 1) { B.defT -= 1; enemyFire(rand(-4.5, 4.5), B.z - 1, G.lead.x + rand(-0.8, 0.8), 0, 18); }
-    updateBarrage(B, dt);
-  } else { updateBoss(dt); if (G.mode !== 'play') return; }
-  if (B.timer <= 0 && !B.dead) baseFailed();
-}
-function updateBarrage(B, dt) {
-  if (B.zone) {
-    B.wind -= dt;
-    if (B.wind <= 0) {
-      const z = B.zone;
-      const n = killInZone(x => x > z[0] && x < z[1], 0.08);
-      for (let i = 0; i < 8; i++) spark(rand(z[0], z[1]), 0.3, G.P + rand(-1, 1), 4, 0xff5a3a, 6);
-      if (n) floatText(G.lead.x, G.P, 3, '−' + n, '#ff8a9a', 24); else G.stats.dodged++;
-      SFX.slam(); G.shake = Math.max(G.shake, 8);
-      B.zone = null; B.barT = 2.2;
-    }
-  } else if ((B.barT -= dt) <= 0) {
-    const w = ROAD * 2 * 0.36;
-    const x0 = clamp(G.lead.x - w / 2 + rand(-1.5, 1.5), -ROAD, ROAD - w);
-    B.zone = [x0, x0 + w]; B.wind = 1.0; B.windMax = 1.0; SFX.telegraph();
-  }
-}
-
 // Bosses: colossal, 3 phases (100/66/33%), attacks on a 2s telegraph that delete soldiers.
 const BOSS_DEF = {
   brine: { w: 3.2, attacks: [['slam', 'volley'], ['slam', 'volley', 'slam'], ['volley', 'slam', 'volley']] },
@@ -892,16 +834,21 @@ const BOSS_DEF = {
   echo: { w: 2.6, attacks: [['volley'], ['volley'], ['volley', 'volley']] },
   otherkai: { w: 2.8, attacks: [['volley', 'slam', 'sweep', 'charge'], ['slam', 'sweep', 'charge', 'volley'], ['sweep', 'charge', 'volley', 'slam']] },
 };
+// The boss is on the road from the first second: far down the road, huge in silhouette, walking
+// toward you while you advance. It meets you at 100%; your fire reaches it from ~40%.
+function bossDist(p) { return BAL.bossGap + BAL.bossD0 * Math.max(0, 1 - p); }
 function startBoss() {
   const kinds = ['brine', 'warden', 'shogun', 'echo', 'otherkai'];
-  const kind = kinds[G.stage - 1], D = BOSS_DEF[kind];
-  const z = G.Lr + 13;
-  G.base.z = z;
-  G.boss = { kind, x: 0, z, homeZ: z, w: D.w, phase: 0, flash: 0, atk: null, atkT: 2.2, seq: 0, t: 0, lunge: 0, split: false, platform: false,
-    arch: kind === 'echo' ? G.arch : 'crossbow', archI: 0, recoil: 0 };
-  G.nameCard = { name: STAGES[G.stage - 1].boss, sub: STAGES[G.stage - 1].bossSub, t: 0, max: 2.4 };
-  G.bossIntro = 1.5; // camera push-in; the clock starts after it
-  SFX.sting(); SFX.wind();
+  const kind = kinds[G.stage - 1], D = BOSS_DEF[kind], stageBoss = isStageBoss(G.level);
+  const scale = stageBoss ? 1.25 : 1.05; // 6-8 soldiers tall
+  const hp = bossHP(G.level, G.loop);
+  G.boss = { kind, variant: !stageBoss, scale, hue: stageBoss ? 0 : ((G.level * 47) % 360) / 360, x: 0, z: bossDist(0), homeZ: 0, w: D.w * scale * 0.9,
+    hp, max: hp, phase: 0, flash: 0, atk: null, atkT: 1.5, seq: 0, t: 0, lunge: 0, split: false, platform: false, dead: false,
+    arch: kind === 'echo' ? G.arch : 'crossbow', archI: 0, recoil: 0, acc: 0, accT: 0, firstHitP: null, walk: 0 };
+  const S = STAGES[G.stage - 1];
+  G.nameCard = { name: stageBoss ? S.boss : 'SPAWN OF ' + S.boss.replace(/^THE /, ''), sub: stageBoss ? S.bossSub : 'LEVEL ' + G.level + ' · ' + S.short.toUpperCase(), t: 0, max: 2.4 };
+  G.bossIntro = 1.5; // camera push-in; the run starts after it
+  if (!G.sim) { SFX.sting(); SFX.wind(); }
 }
 function bossHitX(x) {
   const b = G.boss;
@@ -909,13 +856,100 @@ function bossHitX(x) {
   return Math.abs(x - b.x) < b.w;
 }
 function hitBoss(dmg, x, z) {
-  const B = G.base, b = G.boss;
-  B.raw += dmg; dmg *= G.baseK;
-  B.hp -= dmg; B.acc += dmg; b.flash = 0.06;
-  if (Math.random() < 0.4) spark(x, rand(1, 4), z, 3, 0xffd6a0, 4);
+  const b = G.boss;
+  if (b.firstHitP == null) b.firstHitP = G.P / G.Lr;
+  b.hp -= dmg; b.acc += dmg; b.flash = 0.06;
+  G.stats.bossDmg = (G.stats.bossDmg || 0) + dmg;
+  impact(x, rand(1, 4), z, 0xffd6a0);
   SFX.bossHit();
-  if (B.hp <= 0 && !G.noBreak) { B.hp = 0; baseDown(); } // the sim keeps fighting past zero to log the curve
+  const frac = b.hp / b.max, phase = frac > 2 / 3 ? 0 : frac > 1 / 3 ? 1 : 2;
+  if (phase > b.phase) bossPhase(phase);
+  if (b.hp <= 0 && !G.noBreak) { b.hp = 0; bossDown(); }
 }
+// while the road runs: the boss walks at you, sways across the road, breaks as it is hurt
+function updateBossRun(dt) {
+  const b = G.boss;
+  b.t += dt; b.walk += dt;
+  b.flash = Math.max(0, b.flash - dt); b.recoil = Math.max(0, b.recoil - dt * 2);
+  b.z = G.P + bossDist(G.P / G.Lr);
+  b.x = lerp(b.x, Math.sin(b.t * 0.35) * 1.4, 1 - Math.exp(-dt * 1.2));
+  tickAcc(b, dt, b.x + rand(-1, 1), b.z - 1, 4.5);
+}
+function bossDown() {
+  const b = G.boss;
+  if (b.dead) return;
+  b.dead = true;
+  G.phase = 'done';
+  G.stats.killP = G.P / G.Lr; G.stats.killT = G.lt;
+  gainCoins(baseBonus(G.level, G.loop));
+  SFX.bossDie(); Haptic.buzz(45); Gunfire.stop();
+  G.shake = 18; G.flash = 0.7; G.flashCol = '#ffffff';
+  G.timeScale = 0.25; G.slowT = 0.4; G.push = 0.001;
+  for (let i = 0; i < 6; i++) spark(b.x + rand(-4, 4), rand(1, 6), b.z - 0.5, 30, i % 2 ? 0xffffff : 0xffb02e, 12);
+  for (const e of G.enemies) if (!e.dead) { e.dead = true; worldPuff(e.x, e.z, 0.6, 0xffffff); }
+  if (!G.sim && (Math.random() < 0.35 || isStageBoss(G.level))) {
+    const n = Math.floor(Math.random() * 9) + 2;
+    G.stats.gems = n; Store.d.gems += n; Store.save();
+    for (let i = 0; i < n; i++) G.parts.push({ kind: 'gem', sx: V.cx + rand(-60, 60), sy: V.h * 0.4, vx: rand(-260, 260), vy: rand(-420, -160), life: 1.4 + i * 0.07, max: 1.4, delay: 0.4, i });
+  }
+  if (isStageBoss(G.level) && G.level >= 10) G.stats.relic = true;
+  G.doneT = 1.6;
+}
+
+// ---------------------------------------------------------------------------
+// Enemy blocks: packed rectangles, 3-5 ranks deep, advancing as one mass. Front rank runners,
+// a core of standard bodies, one or two brutes anchoring the back.
+// ---------------------------------------------------------------------------
+function liveAhead() { let n = 0; for (const e of G.enemies) if (!e.dead && e.z > G.P) n++; return n; }
+function spawnBlock(half) {
+  const L = G.endless ? 40 : G.level, rnd = G.rnd;
+  // before the first gate the lone soldier walks a clear middle lane while blocks march down both edges
+  // ...and until the squad outnumbers a block, blocks keep out of its lane: it should feel the army, not drown in it
+  const lone = !half && !G.endless && G.N < Math.max(8, 2 * blockSize(L));
+  const size = blockSize(L), room = lone ? ROAD - 2.7 : half ? ROAD - 1.2 : 2 * ROAD - 1;
+  // edge blocks beside a small squad go deeper rather than wider so the middle lane stays clear
+  const R = lone ? Math.max(3, Math.ceil(size / (Math.floor(room / 0.6) + 1))) : clamp(3 + Math.floor(size / 12), 3, 5), cols = Math.ceil(size / R);
+  const spx = Math.min(0.85, room / Math.max(1, cols - 1)), spz = 0.85, wid = (cols - 1) * spx;
+  let lo = -ROAD + 0.5 + wid / 2, hi = ROAD - 0.5 - wid / 2;
+  if (half) { lo = half < 0 ? -ROAD + 0.5 + wid / 2 : 0.8 + wid / 2; hi = half < 0 ? -0.8 - wid / 2 : ROAD - 0.5 - wid / 2; }
+  let cx = lo < hi ? lo + rnd() * (hi - lo) : (lo + hi) / 2;
+  if (lone) G.loneSide = -(G.loneSide || 1);
+  let front = G.boss && !G.boss.dead ? Math.min(G.P + 70, G.boss.z - 2 - (R - 1) * spz) : G.P + 70;
+  if (lone) { // a small squad must be able to take a gate without a block arriving on top of it
+    const meets = f => { const tm = (f - G.P) / (G.v + 2.6), pm = G.P + G.v * tm, back = pm + (R - 1) * spz * G.v / (G.v + 2.6); return G.sets.some(st => !st.done && st.z > pm - 5 && st.z < back + 24); };
+    let ok = false;
+    for (let k = 0; k < 6 && !ok; k++) { if (!meets(front)) ok = true; else front -= 8; }
+    if (!ok || front < G.P + 25) return false;
+    // on a split road the gate half must stay clear: edge blocks march down the swarm half only
+    const tm = (front - G.P) / (G.v + 2.6), pm = G.P + G.v * tm;
+    const sp = G.splits.find(q => pm > q.z0 - 12 && pm < q.z1 + 4);
+    if (sp) G.loneSide = sp.side;
+    cx = G.loneSide * (ROAD - 0.4 - wid / 2);
+  }
+  const hp = enemyHP(L, G.loop), W = roleWeights(L), prof = G.stage === 5 ? RIFT_PROFILES[L] : null;
+  const brutes = L >= 4 ? 1 + (size >= 20 ? 1 : 0) : 0, speed = 2.6;
+  let made = 0;
+  for (let r = 0; r < R && made < size; r++) for (let c = 0; c < cols && made < size; c++, made++) {
+    let role = 'normal';
+    if (r === 0) role = G.stage === 2 && L >= 9 && rnd() < 0.5 ? 'shielder' : prof === 'shields' && rnd() < 0.6 ? 'shielder' : 'runner';
+    else if (r === R - 1 && c >= Math.floor((cols - brutes) / 2) && c < Math.floor((cols - brutes) / 2) + brutes) role = 'brute';
+    else if (rnd() < 0.15) role = pickRole(W, rnd());
+    if (role === 'leaper') role = 'normal';
+    const e = addEnemy(role, cx + (c - (cols - 1) / 2) * spx + rand(-0.08, 0.08), front + r * spz + rand(-0.1, 0.1), hp, false);
+    e.speed = speed; e.active = true; e.block = true; e.strafe = 0; e.lone = lone;
+    if (half) { e.half = half; }
+  }
+  G.stats.blocks++; G.stats.spawned += made;
+  return true;
+}
+function updateBlocks(dt) {
+  if (G.phase !== 'run') return;
+  const L = G.endless ? 40 : G.level;
+  G.blockT -= dt; G.floorT -= dt;
+  if (G.blockT <= 0) { if (spawnBlock()) G.blockT += blockInterval(L) / (G.endless ? endlessSpeed(G.endT) : 1); else G.blockT = 0.3; }
+  else if (G.lt > 1 && G.floorT <= 0 && liveAhead() < enemyFloor(L)) { spawnBlock(); G.floorT = 0.3; } // never let the road look empty
+}
+
 function bossTelegraph(type) {
   const b = G.boss, fh = formHalf();
   const a = { type, wind: 2, max: 2, zones: [] };
@@ -943,13 +977,11 @@ function inAttack(a, x) {
   }
   return false;
 }
+// The clash: the boss has reached the squad. Telegraphed strikes grind the squad down; it can still win.
 function updateBoss(dt) {
-  const b = G.boss, B = G.base;
+  const b = G.boss;
   b.t += dt;
   b.flash = Math.max(0, b.flash - dt); b.recoil = Math.max(0, b.recoil - dt * 2);
-  const frac = B.hp / B.max;
-  const phase = frac > 2 / 3 ? 0 : frac > 1 / 3 ? 1 : 2;
-  if (phase !== b.phase) bossPhase(phase);
   // heavy drift across the road: following it is part of the fight
   const drift = b.kind === 'brine' ? 1.6 : b.kind === 'warden' ? 1.2 : 2.0;
   if (!b.atk || b.atk.type !== 'charge') b.x = lerp(b.x, Math.sin(b.t * 0.45) * drift, 1 - Math.exp(-dt * 1.5));
@@ -987,11 +1019,6 @@ function updateBoss(dt) {
     }
     bossTelegraph(type);
   }
-  // adds walk at you; your guns handle them like any enemy
-  if (G.enemies.length) {
-    for (const e of G.enemies) { if (e.dead) continue; e.active = true; e.z -= e.speed * dt; e.t += dt; e.flash = Math.max(0, e.flash - dt); tickAcc(e, dt, e.x, e.z, 1.6); }
-    resolveContacts();
-  }
 }
 function bossPhase(phase) {
   const b = G.boss;
@@ -1022,45 +1049,6 @@ function bossPhase(phase) {
       break;
   }
 }
-function baseDown() {
-  const B = G.base;
-  if (B.dead) return;
-  B.dead = true;
-  G.phase = 'done';
-  G.stats.breakT = G.timerMax - B.timer;
-  gainCoins(baseBonus(G.level, G.loop));
-  SFX.bossDie(); Haptic.buzz(45); Gunfire.stop();
-  G.shake = 18; G.flash = 0.7; G.flashCol = '#ffffff';
-  G.timeScale = 0.25; G.slowT = 0.4; G.push = 0.001;
-  const z = G.boss ? G.boss.z : B.z;
-  for (let i = 0; i < 6; i++) spark(rand(-4, 4), rand(1, 5), z - 0.5, 30, i % 2 ? 0xffffff : 0xffb02e, 12);
-  G.debris = 1;
-  // gems: 35% chance, 2-10 (bosses always drop some)
-  if (!G.sim && (Math.random() < 0.35 || G.boss)) {
-    const n = Math.floor(Math.random() * 9) + 2;
-    G.stats.gems = n; Store.d.gems += n; Store.save();
-    for (let i = 0; i < n; i++) G.parts.push({ kind: 'gem', sx: V.cx + rand(-60, 60), sy: V.h * 0.4, vx: rand(-260, 260), vy: rand(-420, -160), life: 1.4 + i * 0.07, max: 1.4, delay: 0.4, i });
-  }
-  if (G.boss && G.level >= 10) G.stats.relic = true;
-  G.doneT = 1.6;
-}
-function baseFailed() {
-  if (G.mode !== 'play') return;
-  G.mode = 'basefail';
-  G.stats.failHP = G.base.hp / G.base.max;
-  bankCoins();
-  SFX.fail(); Gunfire.stop();
-  UI.baseFail();
-}
-function retryBase() {
-  G.mode = 'play'; G.banked = false;
-  G.stats.coins = 0;
-  setCount(G.arriveN);
-  const B = G.base;
-  B.hp = B.max; B.timer = G.timerMax; B.zone = null; B.barT = 1.2; B.dmgLog = []; B.raw = 0;
-  G.enemies = []; G.hazards = []; SHOTS.clear(); ESHOTS.clear();
-  if (G.boss) Object.assign(G.boss, { atk: null, atkT: 2.2, phase: 0, seq: 0, split: false, platform: false, x: 0, z: G.boss.homeZ, lunge: 0, arch: G.boss.kind === 'echo' ? G.arch : 'crossbow' });
-}
 function endlessOver() {
   G.mode = 'failed';
   const d = Math.floor(G.P);
@@ -1080,8 +1068,15 @@ function fx(kind, x, y, z, vx, vy, vz, life, size, col) {
   const p = FX.spawn();
   if (!p) return;
   p.kind = kind; p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.life = life; p.max = life; p.size = size; p.col = col;
+  p.frames = kind === FXK.flash ? 2 : 0; p.rot = Math.random() * TAU; // flashes live exactly 2 drawn frames (the renderer counts them)
 }
 function spark(x, y, z, n, col, sp) { for (let i = 0; i < n; i++) fx(FXK.spark, x, y, z, rand(-sp, sp), rand(0, sp), rand(-sp, sp) * 0.5, rand(0.2, 0.45), rand(0.07, 0.17), col); }
+// a bullet impact: 6-10 sparks, 0.15 units, radiating for 0.3s
+function impact(x, y, z, col) {
+  if (G.sim) return;
+  const n = 6 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n; i++) { const a = Math.random() * TAU, e = Math.random() * 1.2 - 0.2, sp = 3 + Math.random() * 3; fx(FXK.spark, x, y, z, Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp, Math.sin(a) * Math.cos(e) * sp * 0.6, 0.3, 0.15, col); }
+}
 function worldBurst(x, z, y, n, col, sp) { spark(x, y, z, n, col, sp); }
 function worldPuff(x, z, y, col) { for (let i = 0; i < 2; i++) fx(FXK.puff, x + rand(-0.2, 0.2), y + rand(-0.2, 0.2), z, 0, 1.5, 0, 0.3, rand(0.25, 0.45), col); }
 function floatText(x, z, y, text, col, size, small) {
@@ -1094,7 +1089,8 @@ function updateFx(dt) {
   for (let i = FX.n - 1; i >= 0; i--) {
     const p = FX.a[i];
     p.life -= dt;
-    if (p.life <= 0) { FX.kill(i); continue; }
+    if (p.life <= 0 || (p.kind === FXK.flash && p.frames <= 0)) { FX.kill(i); continue; }
+    if (p.kind === FXK.spark && p.size === 0.15) { p.x += p.vx * dt; p.z += p.vz * dt; p.y = Math.max(0, p.y + p.vy * dt); continue; } // impact sparks fly straight
     p.x += p.vx * dt; p.z += p.vz * dt; p.y = Math.max(0, p.y + p.vy * dt);
     if (p.kind === FXK.spark || p.kind === FXK.fall || p.kind === FXK.casing) p.vy -= 18 * dt;
   }
@@ -1157,11 +1153,13 @@ function update(dt) {
   for (const b of G.bodies) b.ph += dt * (G.phase === 'run' ? 11 : 0);
   if (G.tut) updateTutorial(dt);
   sortEnemies();
-  const firing = G.phase === 'run' || (G.phase === 'assault' && G.bossIntro <= 0);
+  if (G.phase === 'intro') { G.bossIntro -= dt; if (G.bossIntro <= 0) G.phase = 'run'; }
+  const firing = G.phase === 'run' || G.phase === 'clash';
   updateGuns(dt, firing);
   updateShots(dt);
-  if (!G.sim) Gunfire.tick(dt, firing ? guns() * (G.N > BAL.gunCap ? Math.sqrt(G.N / BAL.gunCap) : 1) : 0, fireRate(), G.phase === 'assault');
+  if (!G.sim) Gunfire.tick(dt, firing ? guns() * (G.N > BAL.gunCap ? Math.sqrt(G.N / BAL.gunCap) : 1) : 0, fireRate(), G.phase === 'clash' || (G.boss && G.boss.firstHitP != null));
   if (G.mode !== 'play') return;
+  for (const c of G.crates) if (!c.dead) { tickAcc(c, dt, c.x, c.z, 2.2); c.flash = Math.max(0, c.flash - dt); }
   for (const b of G.barrels) if (!b.dead) tickAcc(b, dt, b.x, b.z, 1.6);
   for (const b of G.bars) if (!b.dead) tickAcc(b, dt, (b.x0 + b.x1) / 2, b.z, 1.6);
   if (G.phase === 'run') {
@@ -1171,6 +1169,8 @@ function update(dt) {
       extendEndless();
     }
     G.P += G.v * dt;
+    if (G.boss && !G.boss.dead) updateBossRun(dt);
+    updateBlocks(dt);
     updateSplit();
     updateSets(dt);
     moveEnemies(dt);
@@ -1191,9 +1191,19 @@ function update(dt) {
       const w = randi(1, 3) * 2, x0 = pick([-5, -3, -1, 1, 3].filter(x => x + w <= 3)); // never the full width
       G.hazards.push({ x0, x1: x0 + w, t: 0, warn: 3, active: false, dur: 10, kind: 'corrupt' });
     }
-    if (G.P >= G.Lr) { G.P = G.Lr; startAssault(); }
-  } else if (G.phase === 'assault') {
-    updateAssault(dt);
+    if (G.P >= G.Lr && !G.endless) { // the boss has reached you: the clash
+      G.P = G.Lr; G.phase = 'clash'; G.stats.arrive = G.N; G.arriveN = G.N;
+      const b = G.boss; b.homeZ = G.P + BAL.bossGap; b.atkT = 1.0;
+      G.banner = { title: 'IT REACHED YOU', sub: 'KEEP FIRING', t: 0, max: 1.4 };
+    }
+  } else if (G.phase === 'clash') {
+    const b = G.boss;
+    b.homeZ = G.P + BAL.bossGap;
+    updateBoss(dt);
+    tickAcc(b, dt, b.x + rand(-1, 1), b.z - 1, 4.5);
+    moveEnemies(dt);
+    resolveContacts();
+    updateReturnFire(dt);
     updateHazards(dt);
   } else if (G.phase === 'done') {
     G.push = Math.min(1, G.push + dt * 1.2);
