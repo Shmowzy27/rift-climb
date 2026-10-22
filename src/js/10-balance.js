@@ -68,8 +68,8 @@ function baseBonus(L, loop) { return niceNum(discValue(L, loop) * (isStageBoss(L
 // Fire Rate cheap and frequent, Damage mid, Revenue expensive and capped (5 levels, x8.9):
 // once maxed it buys a steady few extra pips of the other two, never a runaway.
 const UPG = {
-  rate: { id: 'rate', name: 'FIRE RATE', per: 1.08, a: 160, c: 1.45, gem: 2, desc: '+8% shots per second per level' },
-  dmg: { id: 'dmg', name: 'DAMAGE', per: 1.10, a: 290, c: 1.45, gem: 3, desc: '+10% damage per soldier per level' },
+  rate: { id: 'rate', name: 'FIRE RATE', per: 1.08, a: 160, c: 1.45, gem: 2, max: 15, desc: '+8% shots per second per level' },
+  dmg: { id: 'dmg', name: 'DAMAGE', per: 1.10, a: 290, c: 1.45, gem: 3, max: 15, desc: '+10% damage per soldier per level' },
   rev: { id: 'rev', name: 'REVENUE', per: 1.55, a: 600, c: 1.05, gem: 4, max: 25, desc: 'Multiplies every coin you pick up' },
 };
 const UPG_ORDER = ['rate', 'dmg', 'rev'];
