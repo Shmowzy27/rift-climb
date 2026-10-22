@@ -26,10 +26,10 @@ const Store = {
   d: null,
   defaults() {
     return {
-      v: 1, gems: 0, shop: {}, skinsOwned: ['conscript'], skin: 'conscript',
+      v: 2, gems: 0, coins: 0, up: { rate: 0, dmg: 0, rev: 0 }, plusOne: 0, shop: {}, skinsOwned: ['conscript'], skin: 'conscript',
       settings: { sound: true, music: true, haptics: true },
-      story: [], best: 0, bestScore: 0, runsDone: 0, loop: 0, records: {}, tut: {},
-      run: null, // { level, coins, relics, loop, cards }
+      story: [], best: 0, bestScore: 0, runsDone: 0, loop: 0, records: {}, tut: {}, endlessBest: 0, endless: false,
+      run: null, // { level, relics, loop, arch }
     };
   },
   load() {
@@ -41,9 +41,33 @@ const Store = {
         const p = JSON.parse(raw);
         Object.assign(d, p);
         d.settings = Object.assign(this.defaults().settings, p.settings || {});
+        d.up = Object.assign(this.defaults().up, p.up || {});
+        this.migrate(d);
       } catch (e) { /* corrupted save: start clean */ }
     }
     this.d = d;
+    this.save();
+  },
+  // v1 -> v2: squads start at 1, Reinforcements is gone (gems refunded), coins became a wallet
+  migrate(d) {
+    for (const id in RETIRED_SHOP) {
+      const n = d.shop[id] || 0;
+      if (!n) continue;
+      let refund = 0;
+      for (let i = 0; i < n; i++) refund += RETIRED_SHOP[id](i);
+      d.gems += refund; delete d.shop[id];
+      d.refunded = (d.refunded || 0) + refund;
+    }
+    if ((d.v || 1) < 2) {
+      d.v = 2;
+      if (d.run) {
+        // the old run score becomes nothing; seed the wallet with what the levels already climbed would have paid
+        let c = 0;
+        for (let L = 1; L < d.run.level; L++) c += 14 * discValue(L, d.run.loop) + baseBonus(L, d.run.loop);
+        d.coins = Math.round(c * 0.6);
+        delete d.run.coins; delete d.run.cards;
+      }
+    }
   },
   save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.d)); } catch (e) { /* storage full or blocked */ } },
   reset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} this.d = this.defaults(); this.save(); },
@@ -120,16 +144,45 @@ const AudioSys = {
   },
 };
 
+// Continuous gunfire: a noise bed that thickens with squad size plus a rattle of short
+// bursts whose rate climbs with the number of guns. Never one sample per bullet.
+const Gunfire = {
+  bed: null, bedGain: null, acc: 0,
+  start() {
+    const A = AudioSys;
+    if (!A.ok() || this.bed) return;
+    const c = A.ctx;
+    const src = c.createBufferSource(); src.buffer = A.noiseBuf; src.loop = true;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.6;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+    this.bedGain = c.createGain(); this.bedGain.gain.value = 0;
+    src.connect(f); f.connect(lp); lp.connect(this.bedGain); this.bedGain.connect(A.sfx);
+    src.start(); this.bed = src;
+  },
+  // guns: soldiers firing; rate: shots/s each; loud: base assault / boss mix
+  tick(dt, guns, rate, loud) {
+    const A = AudioSys;
+    if (!A.ok()) return;
+    if (!this.bed) this.start();
+    const vol = guns > 0 ? Math.min(0.22, 0.03 + 0.045 * Math.log(1 + guns)) * (loud ? 1.6 : 1) : 0;
+    this.bedGain.gain.setTargetAtTime(vol, A.ctx.currentTime, 0.08);
+    const bursts = Math.min(32, Math.sqrt(Math.max(0, guns)) * Math.min(rate, 4) * 3.2);
+    this.acc += bursts * dt;
+    let n = 0;
+    while (this.acc >= 1 && n < 4) {
+      this.acc -= 1; n++;
+      A.noise({ d: 0.035 + Math.random() * 0.03, v: (loud ? 0.16 : 0.1) * (0.6 + Math.random() * 0.5), f: 1600 + Math.random() * 2400, type: 'bandpass', q: 1.4, at: Math.random() * 0.02 });
+      if (Math.random() < 0.35) A.tone({ f: 120 + Math.random() * 60, f2: 50, d: 0.05, type: 'square', v: loud ? 0.06 : 0.035 });
+    }
+    if (this.acc > 2) this.acc = 0;
+  },
+  stop() { if (this.bedGain && AudioSys.ctx) this.bedGain.gain.setTargetAtTime(0, AudioSys.ctx.currentTime, 0.05); this.acc = 0; },
+};
+
 const SFX = {
   shoot() { if (AudioSys.throttle('shoot', 60)) return; AudioSys.noise({ d: 0.07, v: 0.12, f: 2600, f2: 700, type: 'bandpass', q: 1.2 }); AudioSys.tone({ f: 160, f2: 70, d: 0.06, type: 'square', v: 0.05 }); },
   hit() { if (AudioSys.throttle('hit', 40)) return; AudioSys.noise({ d: 0.05, v: 0.07, f: 2400, type: 'bandpass', q: 2 }); },
   kill() { if (AudioSys.throttle('kill', 50)) return; AudioSys.noise({ d: 0.14, v: 0.14, f: 900, f2: 200 }); AudioSys.tone({ f: 180, f2: 70, d: 0.12, type: 'square', v: 0.07 }); },
-  exact(streak) {
-    const b = 660 * Math.pow(2, Math.min(streak, 15) / 12);
-    AudioSys.tone({ f: b, d: 0.14, type: 'square', v: 0.09 });
-    AudioSys.tone({ f: b * 1.5, d: 0.16, type: 'square', v: 0.07, at: 0.05 });
-    AudioSys.tone({ f: b * 2, d: 0.3, type: 'sine', v: 0.12, at: 0.1 });
-  },
   merge(tier) {
     const f = 196 * Math.pow(2, tier / 5);
     AudioSys.tone({ f, f2: f * 2, d: 0.12, type: 'square', v: 0.11 });
@@ -174,6 +227,15 @@ const SFX = {
   orb() { if (AudioSys.throttle('orb', 80)) return; AudioSys.tone({ f: 520, f2: 1040, d: 0.18, type: 'sine', v: 0.1 }); AudioSys.tone({ f: 780, f2: 1560, d: 0.14, type: 'triangle', v: 0.05, at: 0.03 }); },
   beam() { if (AudioSys.throttle('beam', 70)) return; AudioSys.tone({ f: 1800, f2: 600, d: 0.08, type: 'sawtooth', v: 0.04 }); },
   slash() { if (AudioSys.throttle('slash', 90)) return; AudioSys.noise({ d: 0.14, v: 0.22, f: 3000, f2: 900, type: 'bandpass', q: 1.5 }); AudioSys.tone({ f: 1200, f2: 300, d: 0.1, type: 'triangle', v: 0.05 }); },
+  flip() { [0, 7, 12, 16, 19, 24].forEach((n, i) => AudioSys.tone({ f: 660 * Math.pow(2, n / 12), d: 0.5, type: i % 2 ? 'sine' : 'triangle', v: 0.11, at: i * 0.045 })); AudioSys.noise({ d: 0.5, v: 0.12, f: 7000, type: 'highpass' }); },
+  pump(up) { if (AudioSys.throttle('pump', 55)) return; AudioSys.tone({ f: up ? 880 : 300, f2: up ? 1320 : 200, d: 0.06, type: up ? 'triangle' : 'sawtooth', v: up ? 0.06 : 0.05 }); },
+  explode() { AudioSys.tone({ f: 120, f2: 28, d: 0.7, type: 'sine', v: 0.6 }); AudioSys.noise({ d: 0.7, v: 0.5, f: 1400, f2: 80 }); AudioSys.noise({ d: 0.2, v: 0.25, f: 5000, type: 'highpass' }); },
+  enemyShot() { if (AudioSys.throttle('es', 90)) return; AudioSys.tone({ f: 520, f2: 260, d: 0.07, type: 'square', v: 0.03 }); },
+  telegraph() { AudioSys.tone({ f: 220, f2: 330, d: 0.5, type: 'sawtooth', v: 0.08 }); AudioSys.tone({ f: 225, f2: 335, d: 0.5, type: 'sawtooth', v: 0.06, at: 0.02 }); },
+  slam() { AudioSys.tone({ f: 70, f2: 24, d: 0.8, type: 'sine', v: 0.7 }); AudioSys.noise({ d: 0.6, v: 0.45, f: 600, f2: 60 }); },
+  sting() { [0, -1, 3, 6].forEach((n, i) => AudioSys.tone({ f: 110 * Math.pow(2, n / 12), d: 0.9, type: 'sawtooth', v: 0.09, at: i * 0.11 })); AudioSys.noise({ d: 1.2, v: 0.2, f: 300, f2: 2000, type: 'bandpass' }); },
+  disc() { AudioSys.tone({ f: 1046, d: 0.07, type: 'square', v: 0.06 }); AudioSys.tone({ f: 1568, d: 0.12, type: 'square', v: 0.05, at: 0.05 }); },
+  cart() { [0, 4, 7, 12, 16].forEach((n, i) => AudioSys.tone({ f: 784 * Math.pow(2, n / 12), d: 0.12, type: 'square', v: 0.07, at: i * 0.04 })); },
   card() { AudioSys.tone({ f: 392, d: 0.5, type: 'sine', v: 0.1 }); AudioSys.tone({ f: 587, d: 0.6, type: 'sine', v: 0.08, at: 0.12 }); },
 };
 

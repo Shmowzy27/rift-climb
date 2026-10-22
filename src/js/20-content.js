@@ -23,11 +23,13 @@ const STAGES = [
 // Weapon archetypes. rate/dmgF are tuned so effective DPS against each archetype's own
 // stage mix lands within 10% (tools/archetype-bench.js). riftRate/riftDmg retune them for
 // the void crawlers so the Rift's average is even while each Rift profile has its own winner.
+// Every soldier fires on its own timer. rate = shots per second per soldier, speed = projectile
+// speed, dmgF = damage per hit relative to the level's per-soldier damage.
 const ARCH = {
-  crossbow: { id: 'crossbow', squad: 'FOOTMEN', weapon: 'Crossbows', rate: 1.3, range: 24, dmgF: 1.0, riftRate: 1.78, riftDmg: 1, desc: 'Arcing bolts drop over shields; overkill flies on to the next. Short range.' },
-  staff: { id: 'staff', squad: 'APPRENTICES', weapon: 'Staves', rate: 0.49, range: 48, dmgF: 2.0, riftRate: 2.08, riftDmg: 1, desc: 'Huge homing bolts, one every two seconds. They pierce one and carry overkill on.' },
-  blade: { id: 'blade', squad: 'RETAINERS', weapon: 'Blades', rate: 1.5, range: 1.4, dmgF: 1.6, riftRate: 0.88, riftDmg: 1, desc: 'Melee only. Enormous damage at contact, armor or not. Hold your nerve.' },
-  beam: { id: 'beam', squad: 'PILOTS', weapon: 'Beam rifles', rate: 5.0, range: 48, dmgF: 0.107, riftRate: 1, riftDmg: 0.66, desc: 'Fast beams pierce a whole line. Armor and shields stop them. Pick your lane.' },
+  crossbow: { id: 'crossbow', squad: 'FOOTMEN', weapon: 'Crossbows', rate: 1.3, range: 26, speed: 44, dmgF: 1.01, riftRate: 1, riftDmg: 0.997, desc: 'Bolts lob over frontal shields. Medium rate, short range.' },
+  staff: { id: 'staff', squad: 'APPRENTICES', weapon: 'Staves', rate: 0.5, range: 40, speed: 24, dmgF: 3.072, riftRate: 1, riftDmg: 0.882, desc: 'Slow, heavy orbs that bend toward the nearest target and pierce one more.' },
+  blade: { id: 'blade', squad: 'RETAINERS', weapon: 'Blades', rate: 1.1, range: 14, speed: 30, dmgF: 1.296, riftRate: 1, riftDmg: 1.073, desc: 'Thrown crescent cuts. Short reach, cleave three, armor means nothing. Shields stop them.' },
+  beam: { id: 'beam', squad: 'PILOTS', weapon: 'Beam rifles', rate: 4.0, range: 40, speed: 95, dmgF: 0.327, riftRate: 1, riftDmg: 1.049, desc: 'Fast beams pierce a whole line. Armor and shields stop them. Pick your lane.' },
 };
 const ARCH_ORDER = ['crossbow', 'staff', 'blade', 'beam'];
 
@@ -47,13 +49,13 @@ const STORY = [
 
 const RELICS = [
   { id: 'hourglass', name: 'Cracked Hourglass', desc: 'Debuff warning time +0.4s' },
-  { id: 'quarter', name: 'Quartermaster', desc: '+3 starting soldiers' },
-  { id: 'twin', name: 'Twin Standard', desc: '5% chance a × gate applies twice' },
+  { id: 'powder', name: 'Blast Wardens', desc: 'Barrels you detonate never hurt your squad' },
+  { id: 'twin', name: 'Twin Standard', desc: '5% chance a × band applies twice' },
   { id: 'magnet', name: 'Magnet Coil', desc: 'Coins drift toward the squad' },
   { id: 'siege', name: 'Siege Doctrine', desc: '+50% damage to bases and bosses' },
   { id: 'patient', name: 'Patient Advance', desc: '+8% damage per 10s without a debuff, max +40%' },
-  { id: 'abacus', name: 'Abacus', desc: 'Shows each gate’s resulting count before you commit' },
-  { id: 'remainder', name: 'Remainder', desc: '÷ gates round up instead of down' },
+  { id: 'abacus', name: 'Abacus', desc: 'Shows each band’s resulting count before you commit' },
+  { id: 'remainder', name: 'Remainder', desc: '÷ bands round up instead of down' },
   { id: 'scavenger', name: 'Scavenger’s Luck', desc: 'Pickup drop chance 5% → 7%' },
   { id: 'vanguard', name: 'Vanguard', desc: 'Front rank takes 2 hits before dying' },
 ];
@@ -96,16 +98,17 @@ const SKINS = [
 const skinById = id => SKINS.find(s => s.id === id) || SKINS[0];
 
 const SHOP = [
-  { id: 'reinf', name: 'Reinforcements', desc: '+3 starting soldiers', cost: n => Math.round(8 * Math.pow(1.5, n)), max: 10, icon: 'helmet' },
   { id: 'steady', name: 'Steady Hands', desc: '+10% steering speed', cost: n => Math.round(12 * Math.pow(1.5, n)), max: 5, icon: 'boot' },
   { id: 'medic', name: 'Field Medic', desc: 'Survive once at 1 soldier per level', cost: n => [40, 90][n], max: 2, icon: 'medic' },
-  { id: 'lucky', name: 'Lucky Gate', desc: '+3% chance a + gate doubles', cost: n => Math.round(15 * Math.pow(1.6, n)), max: 5, icon: 'clover' },
+  { id: 'lucky', name: 'Lucky Gate', desc: '+3% chance a + band doubles', cost: n => Math.round(15 * Math.pow(1.6, n)), max: 5, icon: 'clover' },
   { id: 'marks', name: 'Marksman', desc: '+8% per-soldier damage', cost: n => Math.round(25 * Math.pow(1.6, n)), max: 5, icon: 'scope' },
   { id: 'keen', name: 'Keen Eye', desc: '+0.2s debuff warning', cost: n => Math.round(20 * Math.pow(1.6, n)), max: 3, icon: 'eye' },
   { id: 'siege', name: 'Siege Training', desc: '+10% damage to bases', cost: n => Math.round(30 * Math.pow(1.6, n)), max: 4, icon: 'tower' },
 ];
 const shopLvl = id => (Store.d.shop[id] || 0);
 const RALLY_COST = 25;
+// Retired gem-shop items: gems spent on them are refunded on load (see Store.load)
+const RETIRED_SHOP = { reinf: n => Math.round(8 * Math.pow(1.5, n)) };
 
 // Enemy looks per stage and role (all original)
 const STAGE_LOOKS = [
@@ -121,8 +124,12 @@ const RIFT_PROFILES = { 33: 'packs', 34: 'brutes', 35: 'shields', 36: 'drift', 3
 const ENEMY_TYPES = {
   runner: { hp: 0.55, speed: 7, kill: 1, r: 0.45 },
   normal: { hp: 1, speed: 4, kill: 1, r: 0.5 },
-  brute: { hp: 2.6, speed: 2, kill: 3, r: 0.8 },
-  shielder: { hp: 1.4, speed: 2.8, kill: 2, r: 0.6 },
-  leaper: { hp: 0.9, speed: 4.5, kill: 2, r: 0.5 },
+  brute: { hp: 2.6, speed: 2, kill: 2, r: 0.8 },
+  shielder: { hp: 1.4, speed: 2.8, kill: 1, r: 0.6 },
+  leaper: { hp: 0.9, speed: 4.5, kill: 1, r: 0.5 },
   treasure: { hp: 0.6, speed: 0, kill: 0, r: 0.55 },
 };
+
+// Body colours (spark bursts on a kill) and size multipliers per enemy look
+const LOOK_COLORS = { slime: 0x36d6b5, bigslime: 0x36d6b5, hound: 0x8a3a2a, husk: 0x6a6a78, oni: 0xc2262e, yokai: 0x3a2a5e, bigyokai: 0x3a2a5e, wisp: 0xffa040, drone: 0xc9a24a, bigdrone: 0xc9a24a, ghost: 0xc06bff, crawler: 0xffffff, bigcrawler: 0xffffff, shieldcrawler: 0xffffff, treasure: 0xffd23d, shade: 0x2bf0ff, twin: 0xffffff };
+const LOOK_SCALE = { bigslime: 1.7, bigyokai: 1.6, bigdrone: 1.5, bigcrawler: 1.6, oni: 1, slime: 1.05 };

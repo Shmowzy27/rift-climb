@@ -22,6 +22,13 @@ const SHOP_ICONS = {
   fist: '<svg viewBox="0 0 20 20" class="ic"><rect x="3" y="6" width="14" height="10" rx="4" fill="#ffd23d" stroke="#0b0b14" stroke-width="2"/><path d="M7 6v4M11 6v4" stroke="#0b0b14" stroke-width="1.6"/></svg>',
   tile: '<svg viewBox="0 0 20 20" class="ic"><rect x="2" y="2" width="16" height="16" rx="4" fill="#1a1a2a" stroke="#ffc83d" stroke-width="2"/><path d="M6.5 6.5l7 7M13.5 6.5l-7 7" stroke="#ffc83d" stroke-width="2.2"/></svg>',
 };
+const UPG_ICONS = {
+  rate: '<svg viewBox="0 0 40 40" class="upi"><g stroke="#0b0b14" stroke-width="2.4" stroke-linejoin="round"><path d="M6 24h18l4-4h6v8h-6l-4-4" fill="#9aa4ae"/><path d="M8 26 12 33h5l-2-7" fill="#5a6a7a"/></g><g stroke="#ffd23d" stroke-width="3" stroke-linecap="round"><path d="M34 12l4-4M30 9l1-5M36 17h4"/></g></svg>',
+  dmg: '<svg viewBox="0 0 40 40" class="upi"><path d="M20 3 24 15 37 15 26 23 30 36 20 28 10 36 14 23 3 15 16 15Z" fill="#ff3b5c" stroke="#0b0b14" stroke-width="2.4" stroke-linejoin="round"/><path d="M20 10 22 17 29 17 23 21" fill="none" stroke="#ffb3c1" stroke-width="2"/></svg>',
+  rev: '<svg viewBox="0 0 40 40" class="upi"><g stroke="#0b0b14" stroke-width="2.4"><ellipse cx="20" cy="30" rx="14" ry="5" fill="#c48a12"/><ellipse cx="20" cy="25" rx="14" ry="5" fill="#ffc83d"/><ellipse cx="20" cy="18" rx="11" ry="4" fill="#ffc83d"/><ellipse cx="20" cy="11" rx="8" ry="3.4" fill="#ffe58a"/></g></svg>',
+  gear: '<svg viewBox="0 0 24 24" class="ic"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.6 5.4-1.9-.3a7 7 0 0 1-.7 1.6l1.1 1.6-1.9 1.9-1.6-1.1a7 7 0 0 1-1.6.7l-.3 1.9h-2.6l-.3-1.9a7 7 0 0 1-1.6-.7l-1.6 1.1-1.9-1.9 1.1-1.6a7 7 0 0 1-.7-1.6l-1.9-.3v-2.6l1.9-.3a7 7 0 0 1 .7-1.6L5.3 7.7l1.9-1.9 1.6 1.1a7 7 0 0 1 1.6-.7l.3-1.9h2.6l.3 1.9a7 7 0 0 1 1.6.7l1.6-1.1 1.9 1.9-1.1 1.6a7 7 0 0 1 .7 1.6l1.9.3Z" fill="#e6e8f2" stroke="#0b0b14" stroke-width="1.4"/></svg>',
+  soldier: '<svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="7" r="4" fill="#f2c9a0" stroke="#0b0b14" stroke-width="1.8"/><path d="M5 22c0-6 3-9 7-9s7 3 7 9Z" fill="#3d6a8a" stroke="#0b0b14" stroke-width="1.8"/></svg>',
+};
 const RELIC_ICON = '<svg viewBox="0 0 24 24" class="ic big"><path d="M12 2 21 7v10l-9 5-9-5V7Z" fill="#2a1f3d" stroke="#c9a8ff" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.5" fill="#c9a8ff"/></svg>';
 
 const UI = {
@@ -44,17 +51,19 @@ const UI = {
   },
   hide() { this.clearTimers(); this.root.innerHTML = ''; },
   gemsChip() { return `<div class="chip">${SVG.gem}<b>${Store.d.gems}</b></div>`; },
+  coinsChip() { return `<div class="chip">${SVG.coin}<b>${fmtInt(Store.d.coins || 0)}</b></div>`; },
 
   // ---------------- main menu ----------------
   menu() {
     G.mode = 'menu';
+    Gunfire.stop();
     const run = Store.d.run;
     MENU.stage = run ? stageOf(run.level) : 1;
     Music.play(5);
     const cont = run && run.level > 1;
     const loop = Store.d.loop || 0;
     this.show(`
-      <div class="top-row">${this.gemsChip()}${Store.d.bestScore ? `<div class="chip loop">BEST ${fmtInt(Store.d.bestScore)}</div>` : ''}${loop ? `<div class="chip loop">CLIMB +${loop}</div>` : ''}</div>
+      <div class="top-row"><div class="chips">${this.coinsChip()}${this.gemsChip()}</div>${loop ? `<div class="chip loop">CLIMB +${loop}</div>` : ''}</div>
       <div class="logo">
         <svg viewBox="0 0 320 130" aria-label="Rift Climb">
           <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b9b6ff"/></linearGradient></defs>
@@ -69,6 +78,7 @@ const UI = {
       <div class="menu-btns">
         <button class="btn big" data-act="play">${cont ? 'CONTINUE · LV ' + run.level : 'PLAY'}</button>
         ${cont ? '<button class="btn ghost small" data-act="newclimb">NEW CLIMB</button>' : ''}
+        ${Store.d.endless ? `<button class="btn alt" data-act="endless">ENDLESS${Store.d.endlessBest ? ' \u00b7 BEST ' + fmtInt(Store.d.endlessBest) + 'm' : ''}</button>` : ''}
         <div class="row">
           <button class="btn alt" data-act="shop">GEM SHOP</button>
           <button class="btn alt" data-act="skins">SKINS</button>
@@ -78,28 +88,43 @@ const UI = {
           <button class="btn alt" data-act="settings">SETTINGS</button>
         </div>
       </div>`, 'menu');
+    if (Store.d.refunded) { // Reinforcements is gone: say so once
+      const n = Store.d.refunded; delete Store.d.refunded; Store.save();
+      this.info('REINFORCEMENTS RETIRED', `Every level now starts with one soldier. The ${n} gems you spent on Reinforcements are back in your pocket.`, () => this.menu());
+    }
+  },
+  info(title, msg, done) {
+    this.show(`<div class="panel center"><h2>${title}</h2><p class="msg">${msg}</p><button class="btn big" data-act="infook">OK</button></div>`, 'dim');
+    this.root.querySelector('[data-act=infook]').addEventListener('click', e => { e.stopPropagation(); done(); }, { once: true });
   },
 
   act(a, arg, el) {
     switch (a) {
       case 'play': if (!Store.d.run) newRun(Store.d.loop); this.beginLevel(); break;
+      case 'go': this.launch(); break;
+      case 'up': this.buyUp(arg, el); break;
+      case 'plusone': this.buyPlusOne(); break;
+      case 'prepshop': this.shop(true); break;
+      case 'prepset': this.settings(false, true); break;
+      case 'prep': this.prep(); break;
+      case 'endless': this.archPick(() => { this.hide(); startLevel({ endless: true }); }, true); break;
       case 'newclimb': this.confirm('Start a new climb? Your current run ends.', 'NEW CLIMB', () => { newRun(Store.d.loop); this.beginLevel(); }, () => this.menu()); break;
-      case 'shop': this.shop(); break;
+      case 'shop': this.shop(false); break;
       case 'skins': this.skins(); break;
       case 'story': this.storyList(); break;
-      case 'settings': this.settings(arg === 'pause'); break;
+      case 'settings': this.settings(arg === 'pause', false); break;
       case 'menu': this.menu(); break;
       case 'buy': this.buy(arg, el); break;
       case 'skin': this.pickSkin(arg, el); break;
       case 'set': this.toggle(arg); break;
-      case 'reset': this.confirm('Erase all progress, gems and skins? This cannot be undone.', 'ERASE', () => this.confirm('Really erase everything?', 'YES, ERASE', () => { Store.reset(); AudioSys.apply(); this.menu(); }, () => this.settings(this._fromPause)), () => this.settings(this._fromPause)); break;
+      case 'reset': this.confirm('Erase all progress, gems and skins? This cannot be undone.', 'ERASE', () => this.confirm('Really erase everything?', 'YES, ERASE', () => { Store.reset(); AudioSys.apply(); this.menu(); }, () => this.settings(this._fromPause, this._fromPrep)), () => this.settings(this._fromPause, this._fromPrep)); break;
       case 'resume': this.hide(); G.mode = 'play'; break;
       case 'restart': this.confirm('Restart this level?', 'RESTART', () => { this.hide(); startLevel(); }, () => this.pause()); break;
-      case 'quit': Store.save(); this.menu(); break;
+      case 'quit': if (G.mode === 'paused' || G.mode === 'play') bankCoins(); Store.save(); this.menu(); break;
       case 'relics': this.relicsPanel(); break;
       case 'sellrelic': this.sellRelic(arg, el); break;
       case 'replay': { const s = STORY.find(x => x.id === arg); if (s) this.storyCard(s, () => this.storyList(), true); break; }
-      case 'retry': this.hide(); startLevel(); break;
+      case 'retry': this.hide(); if (G.endless) startLevel({ endless: true }); else startLevel(); break;
       case 'retrybase': this.hide(); retryBase(); break;
     }
   },
@@ -121,14 +146,60 @@ const UI = {
       const s = STORY.find(x => x.id === 'pre' + st);
       if (!Store.d.story.includes(s.id)) { Store.d.story.push(s.id); Store.save(); }
       MENU.stage = st;
-      this.storyCard(s, () => this.launch());
+      this.storyCard(s, () => this.prep());
       return;
     }
-    this.launch();
+    this.prep();
+  },
+  // ---------------- pre-level upgrade screen ----------------
+  prep() {
+    G.mode = 'menu';
+    Gunfire.stop(); Music.play(5);
+    const run = Store.d.run, L = run.level, st = stageOf(L), d = Store.d;
+    MENU.stage = st;
+    const cards = UPG_ORDER.map(k => {
+      const u = UPG[k], p = d.up[k] || 0, c = pipCost(k, p), maxed = !c;
+      const lv = maxed ? upLevel(p) : upLevel(p) + 1;
+      const m = upMult(k, p);
+      const val = k === 'rev' ? '\u00d7' + (m < 10 ? m.toFixed(1) : Math.round(m)) : '+' + Math.round((m - 1) * 100) + '%';
+      const can = !maxed && (c.gems ? d.gems >= c.gems : d.coins >= c.coins);
+      const pips = Array.from({ length: 5 }, (_, i) => `<i class="${maxed || i < p % 5 ? 'on' : ''}"></i>`).join('');
+      return `<div class="upg upg-${k}"><span class="badge">LV ${lv}</span>${UPG_ICONS[k]}<b>${u.name}</b><em>${val}</em><div class="pips5">${pips}</div>
+        <button class="btn up ${c && c.gems ? 'gem' : ''}" data-act="up" data-arg="${k}" ${can ? '' : 'disabled'}>${maxed ? '<small>MAX</small>' : `<small>UPGRADE</small><span>${c.gems ? SVG.gem + c.gems : SVG.coin + fmtInt(c.coins)}</span>`}</button></div>`;
+    }).join('');
+    const pal = STAGES[st - 1].pal;
+    this.show(`
+      <div class="top-row"><button class="btn ghost icon" data-act="prepset" aria-label="Settings">${UPG_ICONS.gear}</button><div class="chips">${this.coinsChip()}${this.gemsChip()}</div></div>
+      <div class="prep-title" style="--acc:${pal.accent}"><span>${STAGES[st - 1].short.toUpperCase()}</span><b>LEVEL ${L}</b>${isStageBoss(L) ? `<i>${STAGES[st - 1].boss}</i>` : ''}</div>
+      <div class="spacer"></div>
+      <div class="prep-row">
+        <button class="btn alt plus" data-act="plusone" ${d.gems >= 1 && (d.plusOne || 0) < 9 ? '' : 'disabled'}>${UPG_ICONS.soldier}<span>+1 SOLDIER</span><small>${SVG.gem}1</small></button>
+        <div class="startn">START <b>${1 + (d.plusOne || 0)}</b></div>
+        <button class="btn alt" data-act="prepshop">SHOP</button>
+      </div>
+      <div class="upg-cards">${cards}</div>
+      <button class="btn big" data-act="go">PLAY</button>`, 'menu prep');
+  },
+  buyUp(k, el) {
+    const d = Store.d, p = d.up[k] || 0, c = pipCost(k, p);
+    if (!c || (c.gems ? d.gems < c.gems : d.coins < c.coins)) return;
+    if (c.gems) d.gems -= c.gems; else d.coins -= c.coins;
+    d.up[k] = p + 1; Store.save();
+    if ((p + 1) % 5 === 0) { SFX.rally(); Haptic.buzz(20); } else { SFX.buff(); Haptic.buzz(8); }
+    this.prep();
+    const card = this.root.querySelector('.upg-' + k);
+    if (card) card.classList.add('bump');
+  },
+  buyPlusOne() {
+    const d = Store.d;
+    if (d.gems < 1 || (d.plusOne || 0) >= 9) return;
+    d.gems -= 1; d.plusOne = (d.plusOne || 0) + 1; Store.save();
+    SFX.summon(); Haptic.buzz(8);
+    this.prep();
   },
   launch() {
     const run = Store.d.run;
-    if (stageOf(run.level) === 5) { this.archPick(() => { this.hide(); startLevel(); }); return; }
+    if (stageOf(run.level) === 5) { this.archPick(() => { this.hide(); startLevel(); }, false); return; }
     this.hide(); startLevel();
   },
   storyCard(s, done, replay) {
@@ -161,7 +232,8 @@ const UI = {
   },
 
   // ---------------- shop ----------------
-  shop() {
+  shop(fromPrep) {
+    this._shopBack = fromPrep ? 'prep' : 'menu';
     const d = Store.d;
     const rows = SHOP.map(u => {
       const n = shopLvl(u.id), maxed = n >= u.max, cost = maxed ? 0 : u.cost(n);
@@ -174,9 +246,9 @@ const UI = {
       return `<div class="item shop-item"><canvas class="mini" data-skin="${s.id}" width="60" height="60"></canvas><div class="info"><b>${s.name}</b><span>${s.desc}</span></div>
         <button class="btn buy" data-act="buy" data-arg="skin:${s.id}" ${own || d.gems < s.price ? 'disabled' : ''}>${own ? 'OWNED' : SVG.gem + s.price}</button></div>`;
     }).join('');
-    this.show(`<div class="head"><button class="btn ghost back" data-act="menu">‹</button><h2>GEM SHOP</h2>${this.gemsChip()}</div>
+    this.show(`<div class="head"><button class="btn ghost back" data-act="${this._shopBack}">‹</button><h2>GEM SHOP</h2>${this.gemsChip()}</div>
       <div class="scroll list">${rows}<h3>EXCLUSIVE SKINS</h3>${skins}
-      <div class="item shop-item">${SVG.heart}<div class="info"><b>Revive</b><span>${REVIVE_COST} gems. Offered on your last heart, only if you say yes.</span></div></div></div>`);
+      <div class="item shop-item">${SVG.heart}<div class="info"><b>Rally</b><span>${RALLY_COST} gems. Offered when your squad is nearly gone, only if you say yes.</span></div></div></div>`);
     this.paintMinis();
   },
   buy(id, el) {
@@ -186,7 +258,7 @@ const UI = {
       const s = skinById(id.slice(5));
       if (d.gems < s.price || d.skinsOwned.includes(s.id)) return;
       d.gems -= s.price; d.skinsOwned.push(s.id); Store.save(); SFX.buff();
-      this.skinCard(s, () => this.shop());
+      this.skinCard(s, () => this.shop(this._shopBack === 'prep'));
       return;
     }
     const u = SHOP.find(x => x.id === id); const n = shopLvl(id);
@@ -194,7 +266,7 @@ const UI = {
     const cost = u.cost(n);
     if (d.gems < cost) return;
     d.gems -= cost; d.shop[id] = n + 1; Store.save(); SFX.buff(); Haptic.buzz(10);
-    this.shop();
+    this.shop(this._shopBack === 'prep');
   },
 
   // ---------------- skins ----------------
@@ -214,7 +286,7 @@ const UI = {
   pickSkin(id) {
     const d = Store.d, s = skinById(id);
     if (d.skinsOwned.includes(id)) { d.skin = id; Store.save(); this.skins(); return; }
-    if (s.price) this.shop();
+    if (s.price) this.shop(false);
   },
   previewArch() { const run = Store.d.run; return (run && stageArch(run.level, run)) || 'crossbow'; },
   paintMinis() {
@@ -233,21 +305,25 @@ const UI = {
       continue;
     }
   },
-  // Stage 5: pick any of the four squads before each level, re-pick for free
-  archPick(done) {
+  // Stage 5 (and endless): pick any of the four squads before each level, re-pick for free
+  archPick(done, endless) {
     const run = Store.d.run;
-    const cur = run.arch || 'crossbow';
-    const el = this.show(`<div class="panel"><p class="tag">THE RIFT \u00b7 LEVEL ${run.level}</p><h2>CHOOSE YOUR SQUAD</h2>
+    const cur = endless ? Store.d.endlessArch || 'crossbow' : run.arch || 'crossbow';
+    const prof = endless ? null : RIFT_PROFILES[run.level];
+    const el = this.show(`<div class="panel"><p class="tag">${endless ? 'ENDLESS' : 'THE RIFT \u00b7 LEVEL ' + run.level}</p><h2>CHOOSE YOUR SQUAD</h2>
       <div class="arch-grid">${ARCH_ORDER.map(id => `<button class="arch ${id === cur ? 'sel' : ''}" data-a="${id}">
         <canvas class="mini" data-skin="${Store.d.skin}" data-arch="${id}" width="84" height="84"></canvas>
         <b>${ARCH[id].squad}</b><span>${ARCH[id].weapon}</span><i>${ARCH[id].desc}</i></button>`).join('')}</div>
-      <p class="muted center-t">${RIFT_PROFILES[run.level] ? 'This level: ' + { packs: 'swarms of fast crawlers', brutes: 'heavy armored crawlers', shields: 'crawlers behind shields', drift: 'crawlers that drift and leap', mixed: 'everything at once' }[RIFT_PROFILES[run.level]] + '.' : 'Everything you learned, at once.'}</p></div>`, 'dim');
+      <p class="muted center-t">${endless ? 'The road never ends. It speeds up every 30 seconds.' : prof ? 'This level: ' + { packs: 'swarms of fast crawlers', brutes: 'heavy armored crawlers', shields: 'crawlers behind shields', drift: 'crawlers that drift and blink', mixed: 'everything at once' }[prof] + '.' : 'Everything you learned, at once.'}</p>
+      <button class="btn ghost" data-back="1">BACK</button></div>`, 'dim');
     this.paintMinis();
     el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', e => {
       e.stopPropagation(); SFX.buff();
-      run.arch = b.dataset.a; Store.save();
+      if (endless) Store.d.endlessArch = b.dataset.a; else run.arch = b.dataset.a;
+      Store.save();
       done();
     }, { once: true }));
+    el.querySelector('[data-back]').addEventListener('click', e => { e.stopPropagation(); if (endless) this.menu(); else this.prep(); }, { once: true });
   },
   skinCard(s, done) {
     const el = this.show(`<div class="unlock"><div class="rays"></div><p class="tag">NEW CHAMPION SKIN</p>
@@ -260,11 +336,11 @@ const UI = {
   },
 
   // ---------------- settings ----------------
-  settings(fromPause) {
-    this._fromPause = !!fromPause;
+  settings(fromPause, fromPrep) {
+    this._fromPause = !!fromPause; this._fromPrep = !!fromPrep;
     const s = Store.d.settings;
     const tg = (k, label) => `<button class="item toggle ${s[k] ? 'on' : ''}" data-act="set" data-arg="${k}"><b>${label}</b><i></i></button>`;
-    this.show(`<div class="head"><button class="btn ghost back" data-act="${fromPause ? 'pauseback' : 'menu'}">\u2039</button><h2>SETTINGS</h2><div></div></div>
+    this.show(`<div class="head"><button class="btn ghost back" data-act="${fromPause ? 'pauseback' : fromPrep ? 'prep' : 'menu'}">\u2039</button><h2>SETTINGS</h2><div></div></div>
       <div class="scroll list">
         ${tg('sound', 'Sound')}${tg('music', 'Music')}${tg('haptics', 'Haptics')}
         <h3>DATA</h3>
@@ -273,13 +349,14 @@ const UI = {
     const back = this.root.querySelector('[data-act=pauseback]');
     if (back) back.addEventListener('click', e => { e.stopPropagation(); this.pause(); }, { once: true });
   },
-  toggle(k) { Store.d.settings[k] = !Store.d.settings[k]; Store.save(); AudioSys.apply(); if (k === 'haptics' && Store.d.settings.haptics) Haptic.buzz(15); this.settings(this._fromPause); },
+  toggle(k) { Store.d.settings[k] = !Store.d.settings[k]; Store.save(); AudioSys.apply(); if (k === 'haptics' && Store.d.settings.haptics) Haptic.buzz(15); this.settings(this._fromPause, this._fromPrep); },
 
   // ---------------- in-game panels ----------------
   pause() {
     if (G.mode !== 'play' && G.mode !== 'paused') return;
     G.mode = 'paused';
     Steer.id = null;
+    Gunfire.stop();
     this.show(`<div class="panel center">
       <h2>PAUSED</h2><p class="muted">Level ${G.level} \u00b7 ${STAGES[G.stage - 1].short} \u00b7 ${fmtInt(G.N)} soldiers</p>
       <button class="btn big" data-act="resume">RESUME</button>
@@ -314,15 +391,20 @@ const UI = {
     el.querySelector('[data-act=nrv]').addEventListener('click', e => { e.stopPropagation(); finish(false); }, { once: true });
   },
   failed() {
-    this.show(`<div class="panel center"><h2 class="bad">SQUAD LOST</h2><p class="muted">Level ${G.level} restarts from the top. Your run is safe.</p>
-      <button class="btn big" data-act="retry">TRY AGAIN</button><button class="btn ghost" data-act="quit">MENU</button></div>`, 'dim');
+    this.show(`<div class="panel center"><h2 class="bad">SQUAD LOST</h2><p class="muted">Level ${G.level} restarts from the top. Your run is safe${G.stats.coins ? ', and you keep the ' + fmtInt(G.stats.coins) + ' coins you picked up' : ''}.</p>
+      <button class="btn big" data-act="retry">TRY AGAIN</button><button class="btn alt" data-act="prep">UPGRADES</button><button class="btn ghost" data-act="quit">MENU</button></div>`, 'dim');
+  },
+  endlessOver(d, best) {
+    this.show(`<div class="panel center"><p class="tag">ENDLESS</p><h2 class="${d > best ? '' : 'bad'}">${d > best ? 'NEW BEST' : 'SQUAD LOST'}</h2>
+      <p class="big-num">${fmtInt(d)}<small>m</small></p><p class="muted">${d > best ? (best ? 'Previous best ' + fmtInt(best) + 'm.' : 'Your first climb into the dark.') : 'Best ' + fmtInt(best) + 'm.'}${G.stats.coins ? ' +' + fmtInt(G.stats.coins) + ' coins.' : ''}</p>
+      <button class="btn big" data-act="endless">AGAIN</button><button class="btn ghost" data-act="menu">MENU</button></div>`, 'dim');
   },
   baseFail() {
     const pct = Math.round(100 * (1 - G.base.hp / G.base.max));
     this.show(`<div class="panel center"><h2 class="bad">${G.boss ? 'IT STILL STANDS' : 'THE BASE HOLDS'}</h2>
       <p class="msg">${pct}% broken. You keep your coins.</p><p class="muted">Retry the ${G.boss ? 'fight' : 'base'} with the ${fmtInt(G.arriveN)} soldiers you arrived with.</p>
       <button class="btn big" data-act="retrybase">RETRY ${G.boss ? 'FIGHT' : 'BASE'}</button>
-      <button class="btn alt" data-act="retry">RESTART LEVEL</button><p class="muted">Better gates mean a bigger squad at the wall.</p>
+      <button class="btn alt" data-act="retry">RESTART LEVEL</button><button class="btn alt" data-act="prep">UPGRADES</button><p class="muted">Pump the green bands. A bigger squad breaks it faster.</p>
       <button class="btn ghost" data-act="quit">MENU</button></div>`, 'dim');
   },
 
@@ -336,14 +418,12 @@ const UI = {
       <div class="banner"><span>LEVEL ${sum.level}</span><b>CLEAR</b></div>
       <div class="tally">
         <div class="tl" id="tl-coins">${SVG.coin}<span>COINS</span><b>0</b></div>
-        <div class="tl hide" id="tl-squad"><span>SQUAD ${fmtInt(sum.squad)}</span><b>\u00d7${sum.mult}</b><i>TOTAL ${fmtInt(sum.total)} \u00b7 RUN SCORE ${fmtInt(sum.score)}</i></div>
-        <div class="tl hide" id="tl-exact"><span>EXACT BREAKS</span><b>${sum.exact}</b>${sum.bonus ? `<em>NEW RECORD +${fmtInt(sum.bonus)}</em>` : sum.record ? `<i>BEST ${sum.record}</i>` : ''}</div>
-        ${sum.streak >= 3 ? `<div class="tl hide" id="tl-streak"><span>BEST STREAK</span><b>×${sum.streak}</b></div>` : ''}
+        <div class="tl hide" id="tl-squad">${UPG_ICONS.soldier}<span>SQUAD AT THE WALL</span><b>${fmtInt(sum.arrive)}</b>${sum.flips ? `<i>${sum.flips} red band${sum.flips > 1 ? 's' : ''} flipped</i>` : ''}</div>
         ${sum.gems ? `<div class="tl hide" id="tl-gems">${SVG.gem}<span>GEMS</span><b>+${sum.gems}</b></div>` : ''}
       </div>
       <div class="next-area"></div></div>`, 'dim clearbg');
     const coinsB = el.querySelector('#tl-coins b');
-    const dur = 900 + Math.min(1600, sum.level * 30);
+    const dur = 900 + Math.min(1400, sum.level * 30);
     const t0 = performance.now();
     let ticks = 0;
     const step = () => {
@@ -355,14 +435,13 @@ const UI = {
     requestAnimationFrame(step);
   },
   _clear2(sum, el) {
-    const ids = ['tl-squad', 'tl-exact', 'tl-streak', 'tl-gems'];
+    const ids = ['tl-squad', 'tl-gems'];
     let i = 0;
     const next = () => {
       while (i < ids.length && !el.querySelector('#' + ids[i])) i++;
       if (i >= ids.length) { this.timers.push(setTimeout(() => this._clear3(sum), 350)); return; }
       const n = el.querySelector('#' + ids[i++]);
       n.classList.remove('hide'); SFX.coin(30 + i * 6);
-      if (n.id === 'tl-exact' && sum.bonus) { SFX.exact(8); Haptic.buzz(15); }
       if (n.id === 'tl-gems') for (let g = 0; g < Math.min(sum.gems, 10); g++) setTimeout(() => SFX.gem(g), g * 60);
       this.timers.push(setTimeout(next, 420));
     };
@@ -372,7 +451,6 @@ const UI = {
     const steps = [];
     if (sum.relic && sum.level >= 10) steps.push(done => this.relicChoice(done));
     if (sum.skin) steps.push(done => this.skinCard(sum.skin, done));
-    steps.push(done => this.cardChoice(sum, done));
     const run = () => { const s = steps.shift(); if (s) s(run); else this._clear4(sum); };
     run();
   },
@@ -383,7 +461,7 @@ const UI = {
         this.storyCard(s, () => {
           newRun(Store.d.loop);
           this.show(`<div class="panel center"><h2>CLIMB +${Store.d.loop}</h2><p class="msg">The road starts over. Everything on it hits harder.</p>
-            <button class="btn big" data-act="play">CLIMB AGAIN</button><button class="btn ghost" data-act="menu">MENU</button></div>`, 'dim');
+            <button class="btn big" data-act="play">CLIMB AGAIN</button><button class="btn alt" data-act="endless">ENDLESS</button><button class="btn ghost" data-act="menu">MENU</button></div>`, 'dim');
         });
         return;
       }
@@ -396,7 +474,7 @@ const UI = {
     };
     this.show(`<div class="panel center"><h2>LEVEL ${sum.level} CLEAR</h2>
       <p class="muted">${sum.stageClear ? 'Stage ' + stageOf(sum.level) + ' complete.' : 'Next: level ' + (sum.level + 1)}</p>
-      <button class="btn big" data-act="nextlvl">${sum.ending ? 'FINISH' : 'NEXT LEVEL'}</button></div>`, 'dim');
+      <button class="btn big" data-act="nextlvl">${sum.ending ? 'FINISH' : 'UPGRADES'}</button></div>`, 'dim');
     this.root.querySelector('[data-act=nextlvl]').addEventListener('click', e => { e.stopPropagation(); go(); }, { once: true });
   },
   relicChoice(done) {
@@ -417,20 +495,5 @@ const UI = {
       el2.querySelector('[data-cancel]').addEventListener('click', ev => { ev.stopPropagation(); done(); }, { once: true });
     }, { once: true }));
     el.querySelector('[data-skip]').addEventListener('click', e => { e.stopPropagation(); done(); }, { once: true });
-  },
-  cardChoice(sum, done) {
-    const run = Store.d.run;
-    const el = this.show(`<div class="panel"><h2>PICK A CARD</h2><div class="cards">
-      <button class="card" data-c="plus8"><b>+8</b><span>SOLDIERS</span><i>Start next level bigger</i></button>
-      <button class="card" data-c="dmg25"><b>+25%</b><span>DAMAGE</span><i>Per soldier, next level</i></button>
-      <button class="card" data-c="coin2"><b>\u00d72</b><span>COINS</span><i>Next level</i></button>
-      </div></div>`, 'dim');
-    el.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', e => {
-      e.stopPropagation();
-      SFX.buff(); Haptic.buzz(10);
-      run.cards = { [b.dataset.c]: true };
-      Store.save();
-      done();
-    }, { once: true }));
   },
 };

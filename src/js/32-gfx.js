@@ -7,9 +7,7 @@
 // ============================================================================
 
 const KAI_LOOK = { id: 'kai', gi: '#2b3350', giS: '#1a2036', trim: '#c4182d', hair: '#1d1b26', hairS: '#0e0d14', skin: '#f2c9a0', fx: ['cape'], cape: '#c4182d' };
-const OP_COLORS = { add: '#3d9bff', mul: '#22c9a0', sub: '#ff4a5c', div: '#ff8a2e', cmp: '#a55bff' };
-const gateColor = g => (g.ops.length > 1 ? OP_COLORS.cmp : OP_COLORS[g.ops[0].k]);
-const LOOK_COLORS = { slime: 0x36d6b5, bigslime: 0x36d6b5, hound: 0x8a3a2a, husk: 0x6a6a78, oni: 0xc2262e, yokai: 0x3a2a5e, bigyokai: 0x3a2a5e, wisp: 0xffa040, drone: 0xc9a24a, bigdrone: 0xc9a24a, ghost: 0xc06bff, crawler: 0xffffff, bigcrawler: 0xffffff, shieldcrawler: 0xffffff, treasure: 0xffd23d, shade: 0x2bf0ff, twin: 0xffffff };
+const BAND_GREEN = 0x3dff7a, BAND_RED = 0xff2f4f;
 const SKIN_TONE = '#f2c9a0';
 
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _v = new THREE.Vector3();
@@ -302,66 +300,92 @@ function enemyParts(look) {
   }
   return out;
 }
-const LOOK_SCALE = { bigslime: 1.7, bigyokai: 1.6, bigdrone: 1.5, bigcrawler: 1.6, oni: 1, slime: 1.05 };
 
 // ---- bosses -----------------------------------------------------------------
-function bossParts(kind) {
-  const out = [];
-  switch (kind) {
-    case 'brine':
-      out.push(part(GB.ico(3.4, 1), '#2fbfa2', [0, 2.2, 0], 0, [1.25, 0.75, 1]));
-      for (let i = 0; i < 5; i++) out.push(part(GB.sph(0.42 - Math.abs(i - 2) * 0.08, 7, 5), '#0b0b14', [(i - 2) * 0.75, 3.2 - Math.abs(i - 2) * 0.25, 2.55]));
-      for (let i = 0; i < 9; i++) { const a = i / 9 * TAU; out.push(part(GB.ico(0.35, 0), '#8ff7e4', [Math.cos(a) * 2.2, 4.4 + Math.sin(i) * 0.3, Math.sin(a) * 1.6])); }
-      for (let i = 0; i < 6; i++) out.push(part(GB.cone(0.25, 0.8, 5), '#2fbfa2', [-3.5 + i * 1.4, 0.4, 2.2], [Math.PI, 0, 0]));
-      break;
-    case 'warden':
-      for (const sd of [-1, 1]) out.push(part(GB.box(0.9, 2.4, 0.9), '#2a2022', [sd * 0.8, 1.2, 0]));
-      out.push(part(GB.box(2.8, 2.2, 1.5), '#3a2a2c', [0, 3.4, 0]));
-      out.push(part(GB.box(2.4, 0.15, 0.2), '#ff7a1a', [0, 3.2, 0.78]));
-      out.push(part(GB.box(0.15, 1.6, 0.2), '#ff7a1a', [0.5, 3.5, 0.78], [0, 0, 0.3]));
-      for (const sd of [-1, 1]) out.push(part(GB.box(1.2, 0.6, 1.4), '#4a3436', [sd * 1.9, 4.5, 0], [0, 0, sd * -0.3]));
-      out.push(part(GB.box(0.9, 0.9, 0.9), '#241a1c', [0, 4.95, 0.1]));
-      out.push(part(GB.box(0.7, 0.12, 0.05), '#ffd23d', [0, 4.95, 0.56]));
-      for (let i = 0; i < 4; i++) out.push(part(GB.cone(0.25 - i * 0.04, 1.2 - i * 0.15, 5), i % 2 ? '#ffd23d' : '#ff5a1a', [0, 5.8 + i * 0.2, -0.1 - i * 0.05]));
-      out.push(part(GB.cyl(0.12, 0.12, 6, 6), '#5a3a2a', [2.4, 3.2, 0.6], [0, 0, 0.15]));
-      out.push(part(GB.tor(0.7, 0.18, 4, 10), '#ff7a1a', [2.85, 6.1, 0.6]));
-      break;
-    case 'shogun':
-      out.push(part(GB.box(2.6, 1.4, 1.6), '#2a1414', [0, 1.0, 0]));
-      for (let i = 0; i < 3; i++) out.push(part(GB.box(2.8 - i * 0.2, 0.32, 1.7), i % 2 ? '#8a1a1a' : '#1a0e0e', [0, 1.75 + i * 0.32, 0]));
-      out.push(part(GB.box(2.2, 1.6, 1.3), '#a81e1e', [0, 3.2, 0]));
-      for (const sd of [-1, 1]) out.push(part(GB.box(1.5, 0.45, 1.5), '#1a0e0e', [sd * 1.75, 4.0, 0], [0, 0, sd * -0.35]));
-      out.push(part(GB.box(1.0, 0.9, 1.0), '#0b0b14', [0, 4.55, 0.1]));
-      for (const sd of [-1, 1]) out.push(part(GB.box(0.16, 0.1, 0.05), '#ffffff', [sd * 0.22, 4.6, 0.62]));
-      out.push(part(GB.sph(0.75, 8, 4), '#1a0e0e', [0, 5.05, 0], 0, [1.2, 0.6, 1.2]));
-      out.push(part(GB.tor(0.9, 0.09, 3, 12, Math.PI), '#ffd23d', [0, 5.3, 0.2]));
-      break;
-    case 'echo':
-      for (let i = 0; i < 7; i++) out.push(part(GB.box(2.4 - Math.abs(i - 3) * 0.15, 0.55, 1.2), i % 2 ? '#ff2bd6' : '#1b1035', [0, 0.8 + i * 0.65, 0]));
-      out.push(part(GB.ico(0.9, 0), '#1b1035', [0, 5.6, 0]));
-      for (const sd of [-1, 1]) { out.push(part(GB.box(0.3, 0.1, 0.05), '#2bf0ff', [sd * 0.3, 5.65, 0.8])); out.push(part(GB.box(0.5, 2.8, 0.5), '#1b1035', [sd * 1.7, 3.0, 0], [0, 0, sd * 0.2])); }
-      break;
-    case 'otherkai':
-      out.push(part(GB.box(2.0, 2.0, 1.2), '#0c0b12', [0, 2.6, 0]));
-      out.push(part(GB.box(2.1, 0.3, 1.3), '#ffffff', [0, 1.65, 0]));
-      for (const sd of [-1, 1]) out.push(part(GB.box(0.55, 1.6, 0.6), '#0c0b12', [sd * 0.5, 0.8, 0]));
-      out.push(part(GB.sph(0.6, 8, 6), '#26232f', [0, 4.1, 0]));
-      for (let i = 0; i < 9; i++) { const a = i / 9 * TAU; out.push(part(GB.cone(0.2, 0.9, 4), '#f4f2ff', [Math.cos(a) * 0.4, 4.5, Math.sin(a) * 0.4 - 0.1], [Math.sin(a) * 0.9 - 0.4, 0, -Math.cos(a) * 0.9])); }
-      for (const sd of [-1, 1]) out.push(part(GB.box(0.18, 0.12, 0.05), '#ffffff', [sd * 0.22, 4.15, 0.58]));
-      out.push(part(GB.box(1.6, 0.4, 0.15), '#f4f2ff', [0.6, 3.5, -0.7], [0.3, 0, 0.2]));
-      break;
-  }
-  return out;
+// Colossal (5-6x a soldier), built in groups: base stays, p1 breaks off at 66%, p2 at 33%.
+// Faces +z toward the squad (rotated at draw time). Heights ~6-7 units.
+function kaiWeaponParts(arch) {
+  if (arch === 'staff') return [part(GB.cyl(0.1, 0.1, 5.5, 6), '#f4f2ff', [0, 1.2, 0]), part(GB.ico(0.6), '#ffffff', [0, 4.1, 0])];
+  if (arch === 'blade') return [part(GB.box(0.3, 5.5, 0.1), '#ffffff', [0, 1.8, 0]), part(GB.box(0.9, 0.2, 0.3), '#c4182d', [0, -0.9, 0])];
+  if (arch === 'beam') return [part(GB.box(0.55, 0.65, 4.2), '#0c0b12', [0, 0, -1.2]), part(GB.box(0.22, 0.22, 3), '#ffffff', [0, 0.25, -1.8])];
+  return [part(GB.box(0.28, 0.28, 2.6), '#0c0b12', [0, 0, -0.9]), part(GB.box(3.6, 0.2, 0.22), '#ffffff', [0, 0.1, -2.1])];
 }
-function bossWeaponParts(kind, arch) {
-  if (kind === 'shogun') return [part(GB.box(0.22, 6.5, 0.08), '#e6ecf5', [0, 3.2, 0]), part(GB.box(0.5, 0.18, 0.3), '#ffd23d', [0, 0, 0]), part(GB.box(0.16, 1.0, 0.16), '#2a1414', [0, -0.55, 0])];
-  if (kind === 'otherkai') {
-    if (arch === 'staff') return [part(GB.cyl(0.08, 0.08, 5, 6), '#f4f2ff', [0, 2.5, 0]), part(GB.ico(0.5), '#ffffff', [0, 5.2, 0])];
-    if (arch === 'blade') return [part(GB.box(0.25, 5.5, 0.08), '#ffffff', [0, 2.8, 0])];
-    if (arch === 'beam') return [part(GB.box(0.5, 0.6, 3.8), '#0c0b12', [0, 0.3, 1.2]), part(GB.box(0.2, 0.2, 2.6), '#ffffff', [0, 0.55, 1.6])];
-    return [part(GB.box(0.25, 0.25, 2.2), '#0c0b12', [0, 0, 0.8]), part(GB.box(3.2, 0.18, 0.2), '#ffffff', [0, 0.1, 1.9])];
+function bossRigParts(kind, arch) {
+  const R = { base: [], p1: [], p2: [], glass: [], weapon: null };
+  const B = R.base, P1 = R.p1, P2 = R.p2;
+  switch (kind) {
+    case 'brine': { // bloated slime matriarch: translucent green, a dark core inside
+      R.glass.push(part(GB.ico(2.5, 1), '#2fbf8a', [0, 2.3, 0], 0, [1.25, 0.82, 1.05]));           // inner body (stays)
+      R.glassP1 = [part(GB.ico(3.5, 1), '#5ff0c0', [0, 2.7, 0], 0, [1.25, 0.78, 1.05])];           // outer layer (sheds)
+      B.push(part(GB.ico(1.15, 1), '#0e1a16', [0, 2.5, 0.2]));                                     // the core
+      for (const sd of [-1, 1]) B.push(part(GB.sph(0.22, 7, 5), '#ffef6a', [sd * 0.45, 2.75, 1.25]));
+      B.push(part(GB.box(0.9, 0.12, 0.1), '#ffef6a', [0, 2.15, 1.3]));
+      for (let i = 0; i < 7; i++) { const a = i / 7 * TAU; P1.push(part(GB.cone(0.32, 1.1, 5), '#5ff0c0', [Math.cos(a) * 3.6, 0.5, Math.sin(a) * 2.6], [Math.PI, 0, 0])); }
+      for (let i = 0; i < 9; i++) { const a = i / 9 * TAU; P2.push(part(GB.ico(0.42, 0), '#bffff0', [Math.cos(a) * 2.0, 4.6 + Math.sin(i * 1.7) * 0.25, Math.sin(a) * 1.4])); }
+      for (let i = 0; i < 4; i++) P2.push(part(GB.sph(0.35 - i * 0.05, 6, 4), '#bffff0', [-2.4 + i * 1.6, 1.4 + (i % 2) * 0.6, 2.2]));
+      break;
+    }
+    case 'warden': { // armored giant: molten seams through black plate, a chained censer
+      const bone = '#d8cdb8', plate = '#22191b', seam = '#ff7a1a';
+      for (const sd of [-1, 1]) { // skeleton (always there; plates hide it)
+        B.push(part(GB.box(0.32, 2.6, 0.32), bone, [sd * 0.9, 1.3, 0]));
+        B.push(part(GB.box(0.3, 2.2, 0.3), bone, [sd * 2.05, 3.7, 0.1], [0, 0, sd * 0.25]));
+      }
+      B.push(part(GB.box(0.35, 2.4, 0.35), bone, [0, 3.6, -0.2]));
+      for (let i = 0; i < 4; i++) B.push(part(GB.box(2.2 - i * 0.2, 0.16, 1.1), bone, [0, 3.0 + i * 0.45, 0.1]));
+      B.push(part(GB.box(1.0, 1.0, 1.0), bone, [0, 5.4, 0.1]));
+      for (const sd of [-1, 1]) B.push(part(GB.box(0.22, 0.16, 0.06), '#ffb02e', [sd * 0.24, 5.5, 0.62]));
+      // p1: chest plate, pauldrons, helm
+      P1.push(part(GB.box(3.0, 2.3, 1.6), plate, [0, 3.7, 0.05]));
+      P1.push(part(GB.box(2.6, 0.14, 0.2), seam, [0, 3.4, 0.86]), part(GB.box(0.14, 1.9, 0.2), seam, [0.55, 3.8, 0.86], [0, 0, 0.3]));
+      for (const sd of [-1, 1]) P1.push(part(GB.box(1.4, 0.7, 1.6), '#3a2a2c', [sd * 2.0, 4.85, 0], [0, 0, sd * -0.3]), part(GB.box(1.0, 0.1, 0.1), seam, [sd * 2.0, 4.85, 0.82], [0, 0, sd * -0.3]));
+      P1.push(part(GB.box(1.3, 1.2, 1.3), plate, [0, 5.45, 0.1]), part(GB.box(0.9, 0.12, 0.05), '#ffd23d', [0, 5.45, 0.78]));
+      for (let i = 0; i < 4; i++) P1.push(part(GB.cone(0.25 - i * 0.04, 1.2 - i * 0.15, 5), i % 2 ? '#ffd23d' : '#ff5a1a', [0, 6.3 + i * 0.2, -0.1 - i * 0.05]));
+      // p2: greaves, gauntlets, back plate
+      for (const sd of [-1, 1]) P2.push(part(GB.box(0.95, 2.4, 0.95), plate, [sd * 0.9, 1.25, 0]), part(GB.box(0.1, 1.8, 0.1), seam, [sd * 0.9, 1.3, 0.5]), part(GB.box(0.9, 0.9, 0.9), '#3a2a2c', [sd * 2.35, 2.5, 0.3]));
+      P2.push(part(GB.box(2.8, 2.6, 0.4), plate, [0, 3.9, -0.9]));
+      R.weapon = [part(GB.cyl(0.12, 0.12, 0.2, 6), '#5a3a2a', [0, 0, 0])];
+      for (let i = 0; i < 6; i++) R.weapon.push(part(GB.tor(0.28, 0.08, 4, 8), '#8f8f99', [0, -0.4 - i * 0.48, 0], [0, i % 2 ? Math.PI / 2 : 0, 0]));
+      R.weapon.push(part(GB.cyl(0.6, 0.45, 0.9, 6), '#3a2a2c', [0, -3.4, 0]), part(GB.cone(0.45, 0.9, 5), '#ff7a1a', [0, -2.6, 0]), part(GB.cone(0.25, 0.7, 5), '#ffd23d', [0, -2.5, 0]));
+      R.weaponAt = [2.6, 4.6, 0.6];
+      break;
+    }
+    case 'shogun': { // a towering empty suit: no body inside, a mask floats where the face should be
+      const lac = '#7a1414', lac2 = '#1a0e0e', gold = '#ffd23d';
+      for (let i = 0; i < 4; i++) for (const sd of [-1, 0, 1]) B.push(part(GB.box(1.0, 0.38, 0.18), i % 2 ? lac : lac2, [sd * 1.05, 0.9 + i * 0.4, 0.75 - Math.abs(sd) * 0.15], [0.12, sd * 0.25, 0]));
+      B.push(part(GB.box(2.4, 1.7, 1.4), lac, [0, 3.2, 0]), part(GB.box(1.8, 1.3, 0.2), '#050307', [0, 3.3, 0.62])); // cuirass, hollow inside
+      for (let i = 0; i < 3; i++) B.push(part(GB.box(2.5, 0.12, 1.45), gold, [0, 2.55 + i * 0.5, 0]));
+      B.push(part(GB.box(1.1, 0.35, 1.0), lac2, [0, 4.2, 0])); // collar: empty above it
+      B.push(part(GB.box(0.9, 1.0, 0.15), '#f4f0e8', [0, 5.0, 0.35]));                          // the floating mask
+      B.push(part(GB.box(0.7, 0.07, 0.05), '#d8322a', [0, 5.2, 0.44]), part(GB.box(0.07, 0.45, 0.05), '#d8322a', [0, 4.85, 0.44]));
+      for (const sd of [-1, 1]) B.push(part(GB.box(0.22, 0.1, 0.05), '#0b0b14', [sd * 0.22, 5.1, 0.45]));
+      for (const sd of [-1, 1]) P1.push(part(GB.box(1.5, 1.6, 0.3), lac, [sd * 1.75, 3.6, 0.1], [0, 0, sd * -0.35]), part(GB.box(1.5, 0.12, 0.32), gold, [sd * 1.75, 3.0, 0.1], [0, 0, sd * -0.35]));
+      P1.push(part(GB.sph(0.95, 8, 4), lac2, [0, 5.55, 0], 0, [1.25, 0.55, 1.25]), part(GB.tor(1.0, 0.1, 3, 12, Math.PI), gold, [0, 5.85, 0.25]));
+      P2.push(part(GB.box(0.3, 1.6, 0.3), lac2, [-1.3, 3.0, -0.5]), part(GB.box(0.3, 1.6, 0.3), lac2, [1.3, 3.0, -0.5])); // back banners' poles
+      for (const sd of [-1, 1]) P2.push(part(GB.box(0.9, 1.3, 0.05), '#d8322a', [sd * 1.3, 4.3, -0.5]));
+      R.weapon = [part(GB.box(0.22, 6.0, 0.08), '#e6ecf5', [0, 3.0, 0]), part(GB.box(0.55, 0.18, 0.3), gold, [0, 0, 0]), part(GB.box(0.16, 1.0, 0.16), lac2, [0, -0.55, 0])];
+      R.weaponAt = [2.4, 2.6, 0.9];
+      break;
+    }
+    case 'echo': { // a tall mirrored frame that copies your squad
+      const neonA = '#ff2bd6', neonB = '#2bf0ff', dark = '#140b24';
+      for (const sd of [-1, 1]) B.push(part(GB.box(0.5, 6.6, 0.5), dark, [sd * 2.6, 3.3, 0]), part(GB.box(0.12, 6.2, 0.12), neonB, [sd * 2.35, 3.3, 0.28]));
+      B.push(part(GB.box(5.7, 0.5, 0.5), dark, [0, 0.25, 0]), part(GB.box(5.7, 0.5, 0.5), dark, [0, 6.6, 0]));
+      R.mirror = true;
+      for (let i = 0; i < 5; i++) P1.push(part(GB.cone(0.35, 1.2 - Math.abs(i - 2) * 0.25, 4), i % 2 ? neonA : dark, [-1.6 + i * 0.8, 7.3, 0]));
+      P1.push(part(GB.box(5.2, 0.12, 0.12), neonA, [0, 6.3, 0.28]));
+      for (const sd of [-1, 1]) P2.push(part(GB.box(0.9, 2.2, 0.7), dark, [sd * 3.1, 1.2, 0], [0, 0, sd * 0.1]), part(GB.box(0.12, 1.8, 0.12), neonA, [sd * 3.1, 1.2, 0.4]));
+      break;
+    }
+    case 'otherkai': { // a giant version of you, half void
+      for (const pt of kaiParts(arch)) { pt.p = pt.p.map(v => v * 5); pt.s = pt.s.map(v => v * 5); B.push(pt); }
+      P1.push(part(GB.box(2.2, 3.0, 0.2), '#c4182d', [0.4, 3.0, 1.3], [-0.2, 0, 0.1]));           // the scarf trail, down his back
+      for (let i = 0; i < 4; i++) P2.push(part(GB.oct(0.5), '#f4f2ff', [-2.8 + i * 1.9, 6.4 + (i % 2) * 0.6, 0]));
+      R.halfVoid = true;
+      break;
+    }
   }
-  return null;
+  return R;
 }
 
 // ---- scenery kits per stage -----------------------------------------------------
@@ -470,29 +494,52 @@ const GFX = {
   buildShared() {
     this.k = {};
     const K = this.k;
-    K.blob = new Kit(new THREE.CircleGeometry(0.5, 12).rotateX(-Math.PI / 2), 160, { mat: this.shadowMat, outline: false, order: 1 });
-    K.coin = new Kit(build([part(GB.cyl(0.32, 0.32, 0.07, 10), '#ffc83d', [0, 0, 0], [Math.PI / 2, 0, 0]), part(GB.cyl(0.18, 0.18, 0.08, 10), '#e09a1a', [0, 0, 0], [Math.PI / 2, 0, 0])]), 140, { ol: 0.03 });
+    const add = (o) => new THREE.MeshBasicMaterial(Object.assign({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }, o || {}));
+    K.blob = new Kit(new THREE.CircleGeometry(0.5, 12).rotateX(-Math.PI / 2), 260, { mat: this.shadowMat, outline: false, order: 1 });
+    // coin discs: big upright gold discs, value printed on them by the overlay
+    K.disc = new Kit(build([part(GB.cyl(0.62, 0.62, 0.12, 14), '#ffc83d', [0, 0, 0], [Math.PI / 2, 0, 0]), part(GB.cyl(0.48, 0.48, 0.14, 14), '#e8a21a', [0, 0, 0], [Math.PI / 2, 0, 0])]), 40, { ol: 0.04 });
+    K.cart = new Kit(build([
+      part(GB.box(1.4, 0.6, 1.8), '#7a4a22', [0, 0.65, 0]), part(GB.box(1.5, 0.12, 1.9), '#4a2a12', [0, 0.98, 0]),
+      ...[-1, 1].flatMap(sx => [-1, 1].map(sz => part(GB.cyl(0.32, 0.32, 0.12, 10), '#2a1a10', [sx * 0.75, 0.32, sz * 0.6], [0, 0, Math.PI / 2]))),
+      part(GB.ico(0.62, 0), '#ffd23d', [0, 1.3, 0], 0, [1.2, 0.7, 1.4]), part(GB.ico(0.3, 0), '#fff3a0', [0.3, 1.6, 0.2]),
+      part(GB.box(0.08, 1.4, 0.08), '#4a2a12', [-0.6, 1.5, -0.8]), part(GB.box(0.7, 0.45, 0.04), '#ffd23d', [-0.25, 2.0, -0.8]),
+    ]), 4, { ol: 0.05 });
     K.buff = new Kit(build([part(GB.ico(0.42, 0), '#3fdc5c'), part(GB.box(0.5, 0.14, 0.14), '#ffffff', [0, 0, 0.36]), part(GB.box(0.14, 0.5, 0.14), '#ffffff', [0, 0, 0.36])]), 8, { ol: 0.04 });
     const spikes = [part(GB.ico(0.36, 0), '#e8283e')];
     for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; spikes.push(part(GB.cone(0.12, 0.34, 4), '#8c0f24', [Math.cos(a) * 0.38, Math.sin(a) * 0.38, 0], [0, 0, a - Math.PI / 2])); }
     spikes.push(part(GB.box(0.36, 0.1, 0.1), '#ffffff', [0, 0, 0.36]));
     K.debuff = new Kit(build(spikes), 8, { ol: 0.04 });
     K.gold = new Kit(build([part(GB.dod(0.6), '#ffd23d'), part(GB.oct(0.3), '#ffffff', [0, 0, 0.45])]), 2, { ol: 0.05 });
-    K.ring = new Kit(new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2), 12, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }), outline: false, color: true, order: 2 });
+    K.ring = new Kit(new THREE.RingGeometry(0.85, 1, 32).rotateX(-Math.PI / 2), 24, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }), outline: false, color: true, order: 2 });
     K.bar = new Kit(build([part(GB.box(1, 1.2, 0.6), '#9a9488', [0, 0.6, 0]), part(GB.box(1.01, 0.22, 0.62), '#ffc83d', [0, 0.95, 0]), part(GB.box(1.01, 0.1, 0.62), '#1a1a22', [0, 0.95, 0])]), 10, { ol: 0.04, color: true });
-    K.post = new Kit(build([part(GB.cyl(0.1, 0.12, 3.8, 6), '#e6e8f2', [0, 1.9, 0]), part(GB.box(0.34, 0.2, 0.34), '#2a2a33', [0, 3.85, 0])]), 12, { ol: 0.04 });
-    K.panel = new Kit(new THREE.BoxGeometry(1, 1, 0.06), 9, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }), outline: false, color: true, order: 3 });
-    K.frame = new Kit(new THREE.BoxGeometry(1, 0.16, 0.12), 18, { mat: this.glow, outline: false, color: true });
-    K.haz = new Kit(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), 8, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }), outline: false, color: true, order: 2 });
-    K.bolt = new Kit(build([part(GB.box(0.05, 0.05, 0.6), '#5a3a1e'), part(GB.cone(0.06, 0.16, 4), '#e6ecf5', [0, 0, -0.36], [-Math.PI / 2, 0, 0])]), 160, { outline: false });
-    K.orb = new Kit(build([part(GB.ico(0.22, 0), '#ffb35a'), part(GB.ico(0.12, 0), '#ffffff')]), 60, { mat: this.addMat, outline: false });
-    K.beam = new Kit(new THREE.BoxGeometry(0.16, 0.16, 1), 16, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }), outline: false, color: true });
-    K.slash = new Kit(new THREE.TorusGeometry(1, 0.05, 3, 16, Math.PI).rotateX(-Math.PI / 2), 8, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }), outline: false });
-    K.tracer = new Kit(new THREE.BoxGeometry(0.05, 0.05, 1), 60, { mat: new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.85 }), outline: false });
-    K.part = new Kit(new THREE.OctahedronGeometry(0.5, 0), 520, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff }), outline: false, color: true });
+    // explosive barrel: red drum, hazard bands, a lit fuse cap
+    K.barrel = new Kit(build([
+      part(GB.cyl(0.5, 0.5, 1.2, 12), '#d8262f', [0, 0.6, 0]), part(GB.cyl(0.52, 0.52, 0.16, 12), '#ffd23d', [0, 0.35, 0]), part(GB.cyl(0.52, 0.52, 0.16, 12), '#ffd23d', [0, 0.85, 0]),
+      part(GB.cyl(0.52, 0.52, 0.06, 12), '#1a1a22', [0, 0.35, 0]), part(GB.cyl(0.52, 0.52, 0.06, 12), '#1a1a22', [0, 0.85, 0]),
+      part(GB.cyl(0.42, 0.42, 0.06, 12), '#8a141c', [0, 1.22, 0]), part(GB.cyl(0.08, 0.08, 0.2, 6), '#2a2a33', [0.2, 1.32, 0]), part(GB.ico(0.1, 0), '#fff2a0', [0.2, 1.46, 0]),
+    ]), 8, { ol: 0.05, color: true });
+    // gate bands: a translucent floor band, glowing edge strips and posts at the band edges
+    K.band = new Kit(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), 24, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.58, depthWrite: false }), outline: false, color: true, order: 2 });
+    K.bandWall = new Kit(new THREE.PlaneGeometry(1, 1), 24, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }), outline: false, color: true, order: 3 });
+    K.bandEdge = new Kit(new THREE.BoxGeometry(1, 0.08, 0.3), 48, { mat: this.glow, outline: false, color: true });
+    K.post = new Kit(build([part(GB.cyl(0.1, 0.12, 3.4, 6), '#e6e8f2', [0, 1.7, 0]), part(GB.box(0.34, 0.2, 0.34), '#2a2a33', [0, 3.45, 0])]), 32, { ol: 0.04 });
+    K.postCap = new Kit(new THREE.OctahedronGeometry(0.22, 0), 32, { mat: this.glow, outline: false, color: true });
+    K.divider = new Kit(build([part(GB.box(0.35, 1.4, 4), '#2a2a3a', [0, 0.7, 0]), part(GB.box(0.4, 0.12, 4.02), '#ffd23d', [0, 1.35, 0])]), 40, { ol: 0.04 });
+    K.haz = new Kit(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), 16, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }), outline: false, color: true, order: 2 });
+    K.tdisc = new Kit(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), 6, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }), outline: false, color: true, order: 2 });
+    // gunfire: tapered white-hot cones with a tinted trail; orbs; crescents; the stream
+    K.tracer = new Kit(build([part(GB.cone(0.075, 0.55, 5), '#ffffff', [0, 0, -0.2], [-Math.PI / 2, 0, 0]), part(GB.cyl(0.075, 0.03, 0.5, 5), '#fff6c8', [0, 0, 0.28], [Math.PI / 2, 0, 0])]), 500, { mat: add({ vertexColors: true }), outline: false });
+    K.trail = new Kit(new THREE.BoxGeometry(0.05, 0.05, 1), 500, { mat: add({ opacity: 0.55 }), outline: false, color: true });
+    K.orb = new Kit(build([part(GB.ico(0.26, 0), '#ffb35a'), part(GB.ico(0.14, 0), '#ffffff')]), 160, { mat: this.addMat, outline: false });
+    K.slash = new Kit(new THREE.TorusGeometry(0.8, 0.06, 3, 14, Math.PI).rotateX(-Math.PI / 2), 200, { mat: add({ opacity: 0.85 }), outline: false, color: true });
+    K.stream = new Kit(new THREE.BoxGeometry(1, 1, 1), 16, { mat: add({ opacity: 0.55 }), outline: false, color: true });
+    K.etracer = new Kit(build([part(GB.cone(0.11, 0.6, 5), '#ff5a3a', [0, 0, 0.2], [Math.PI / 2, 0, 0]), part(GB.cyl(0.1, 0.03, 0.9, 5), '#ffb02e', [0, 0, -0.4], [Math.PI / 2, 0, 0])]), 100, { mat: add({ vertexColors: true }), outline: false });
+    K.part = new Kit(new THREE.OctahedronGeometry(0.5, 0), 900, { mat: new THREE.MeshBasicMaterial({ color: 0xffffff }), outline: false, color: true });
+    K.casing = new Kit(new THREE.BoxGeometry(0.06, 0.06, 0.13), 200, { mat: new THREE.MeshBasicMaterial({ color: 0xe8b84a }), outline: false });
+    K.mflash = new Kit(new THREE.OctahedronGeometry(0.3, 0), 160, { mat: add(), outline: false, color: true });
     K.crown = new Kit(build([part(GB.cyl(0.22, 0.2, 0.12, 6), '#ffd23d'), ...[0, 1, 2, 3, 4].map(i => part(GB.cone(0.05, 0.16, 4), '#ffd23d', [Math.cos(i * 1.26) * 0.18, 0.12, Math.sin(i * 1.26) * 0.18]))]), 20, { ol: 0.03 });
     K.defender = new Kit(build([part(GB.box(0.36, 0.5, 0.3), '#2a2030', [0, 0.25, 0]), part(GB.sph(0.16, 6, 4), '#2a2030', [0, 0.62, 0])]), 10, { ol: 0.03 });
-    K.mflash = new Kit(new THREE.OctahedronGeometry(0.22, 0), 60, { mat: new THREE.MeshBasicMaterial({ color: 0xfff2a0 }), outline: false });
+    K.platform = new Kit(build([part(GB.cyl(1, 0.55, 1.4, 18), '#101018', [0, -0.72, 0]), part(GB.tor(1, 0.025, 3, 28), '#ffffff', [0, 0, 0], [Math.PI / 2, 0, 0])]), 1, { outline: false });
     this.enemyKits = {};
   },
   enemyKit(look) {
@@ -500,7 +547,7 @@ const GFX = {
     if (k) return k;
     const geo = build(enemyParts(look));
     const crawl = look === 'crawler' || look === 'bigcrawler' || look === 'shieldcrawler' || look === 'twin';
-    k = new Kit(geo, 48, { ol: 0.05, color: true, olMat: crawl ? this.whiteLine : look === 'shade' ? this.cyanLine : this.outlineMat });
+    k = new Kit(geo, 130, { ol: 0.05, color: true, olMat: crawl ? this.whiteLine : look === 'shade' ? this.cyanLine : this.outlineMat });
     this.enemyKits[look] = k;
     return k;
   },
@@ -514,11 +561,11 @@ const GFX = {
     const sp = soldierParts(arch, skin);
     const geo = build(sp.parts, sp.post);
     const asset = ASSETS.units[arch];
-    if (asset && asset.geo) this.k.body = new Kit(asset.geo, 44, { mat: asset.mat, ol: 0.03 * asset.scale });
-    else this.k.body = new Kit(geo, 44, { ol: 0.035, olMat: skin.fx.includes('glitch') ? this.cyanLine : this.outlineMat });
-    this.k.leg = new Kit(legGeo(skinPal(skin, arch).c2), 90, { ol: 0.03 });
+    if (asset && asset.geo) this.k.body = new Kit(asset.geo, 64, { mat: asset.mat, ol: 0.03 * asset.scale });
+    else this.k.body = new Kit(geo, 64, { ol: 0.035, olMat: skin.fx.includes('glitch') ? this.cyanLine : this.outlineMat });
+    this.k.leg = new Kit(legGeo(skinPal(skin, arch).c2), 132, { ol: 0.03 });
     this.k.kai = new Kit(build(kaiParts(arch)), 2, { ol: 0.04 });
-    if (skin.fx.includes('after')) this.k.after = new Kit(geo.clone(), 44, { mat: this.ghostMat, outline: false });
+    if (skin.fx.includes('after')) this.k.after = new Kit(geo.clone(), 64, { mat: this.ghostMat, outline: false });
   },
   setStage(st) {
     if (this.stageKey === 'st' + st) return;
@@ -557,24 +604,81 @@ const GFX = {
     g.add(new THREE.Mesh(hullGeo(geo, 0.09), st === 5 ? this.whiteLine : this.outlineMat));
     this.base = g; this.world.add(g);
   },
-  dropBoss() { if (this.boss) { this.world.remove(this.boss); this.boss = null; this.bossKey = ''; } },
-  bossMesh(kind, arch) {
-    const key = kind + (kind === 'otherkai' ? arch : '');
-    if (this.bossKey === key) return this.boss;
-    this.dropBoss();
+  dropBoss() {
+    if (this.rig) { this.world.remove(this.rig.root); if (this.rig.twin) this.world.remove(this.rig.twin); for (const f of this.rig.falling) this.world.remove(f.g); }
+    this.rig = null; this.rigKey = '';
+  },
+  // a mesh + its ink hull from a parts list
+  partsMesh(parts, mat, line, ol, post) {
     const g = new THREE.Group();
-    const geo = build(bossParts(kind));
-    const line = kind === 'otherkai' ? this.whiteLine : this.outlineMat;
-    g.add(new THREE.Mesh(geo, this.toon)); g.add(new THREE.Mesh(hullGeo(geo, 0.12), line));
-    const wp = bossWeaponParts(kind, arch);
-    if (wp) {
-      const wg = build(wp), w = new THREE.Group();
-      w.add(new THREE.Mesh(wg, this.toon)); w.add(new THREE.Mesh(hullGeo(wg, 0.08), line));
-      w.position.set(kind === 'shogun' ? 2.6 : 2.2, kind === 'shogun' ? 2.4 : 2.8, kind === 'otherkai' ? 0.4 : 0.8);
-      g.add(w); g.userData.weapon = w;
-    }
-    this.boss = g; this.bossKey = key; this.world.add(g);
+    if (!parts || !parts.length) return g;
+    const geo = build(parts, post);
+    g.add(new THREE.Mesh(geo, mat));
+    g.add(new THREE.Mesh(hullGeo(geo, ol), line));
     return g;
+  },
+  // Colossal boss rig: base + breakable groups (p1 at 66%, p2 at 33%) + weapon, own material for the phase tint
+  bossRig(kind, arch) {
+    const key = kind;
+    if (this.rigKey === key && this.rig) return this.rig;
+    const keep = this.rig && this.rig.kind === kind ? this.rig.broken : 0;
+    this.dropBoss();
+    const R = bossRigParts(kind, arch);
+    const mat = this.toonMat(), glass = this.toonMat({ transparent: true, opacity: 0.55, depthWrite: false });
+    const line = kind === 'otherkai' ? this.whiteLine : kind === 'echo' ? this.cyanLine : this.outlineMat;
+    const halfVoid = R.halfVoid ? (pos, col) => { for (let i = 0; i < pos.length / 3; i++) if (pos[i * 3] > 0.02) { col[i * 3] *= 0.07; col[i * 3 + 1] *= 0.06; col[i * 3 + 2] *= 0.1; } } : null;
+    const make = () => {
+      const root = new THREE.Group(), body = new THREE.Group();
+      root.add(body);
+      if (kind === 'otherkai') body.rotation.y = Math.PI; // kai's parts face away; turn him around
+      body.add(this.partsMesh(R.base, mat, line, 0.12, halfVoid));
+      if (R.glass.length) body.add(this.partsMesh(R.glass, glass, line, 0.1));
+      const p1 = this.partsMesh(R.p1, mat, line, 0.1, halfVoid), p2 = this.partsMesh(R.p2, mat, line, 0.1, halfVoid);
+      if (R.glassP1) p1.add(this.partsMesh(R.glassP1, glass, line, 0.1));
+      body.add(p1); body.add(p2);
+      let weapon = null;
+      if (R.weapon) { weapon = this.partsMesh(R.weapon, mat, line, 0.08); weapon.position.set(...R.weaponAt); body.add(weapon); }
+      const inners = {}, weapons = {};
+      if (R.mirror) { // the echo shows a giant copy of the squad it is mirroring (all four built, one shown)
+        const sk = { id: 'echo', c: '#7fe9ff', c2: '#3a8fb0', h: '#e8fbff', t: '#ff2bd6', fx: ['glitch'] };
+        for (const a of ARCH_ORDER) {
+          const sp = soldierParts(a, sk), inner = this.partsMesh(sp.parts, mat, this.cyanLine, 0.03);
+          inner.scale.setScalar(4.6); inner.rotation.y = Math.PI; inner.position.set(0, 0.5, 0); inner.visible = false;
+          body.add(inner); inners[a] = inner;
+        }
+        const glassPane = new THREE.Mesh(new THREE.PlaneGeometry(4.7, 5.9), new THREE.MeshBasicMaterial({ color: 0x9ff6ff, transparent: true, opacity: 0.22, depthWrite: false }));
+        glassPane.position.set(0, 3.4, 0.35); body.add(glassPane);
+      }
+      if (kind === 'otherkai') for (const a of ARCH_ORDER) { // his weapon follows the squad he is copying
+        const w = this.partsMesh(kaiWeaponParts(a), mat, line, 0.08, halfVoid);
+        w.position.set(-1.6, 3.6, -1.0); w.visible = false; body.add(w); weapons[a] = w;
+      }
+      return { root, body, p1, p2, weapon, inners, weapons };
+    };
+    const a = make();
+    const rig = Object.assign(a, { kind, arch, mat, glass, falling: [], broken: 0, twin: null });
+    if (kind === 'shogun') { const t = make(); rig.twin = t.root; rig.twinBody = t.body; rig.twinWeapon = t.weapon; t.root.visible = false; this.world.add(t.root); }
+    this.world.add(rig.root);
+    this.rig = rig; this.rigKey = key;
+    for (let ph = 1; ph <= keep; ph++) { const g = rig['p' + ph]; if (g) g.visible = false; }
+    rig.broken = keep;
+    return rig;
+  },
+  // armor falls off: the group detaches into the world and tumbles away
+  breakOff(rig, ph) {
+    const g = rig['p' + ph];
+    if (!g || !g.visible) return;
+    this.world.attach(g);
+    rig.falling.push({ g, vy: 4, vx: rand(-2, 2), vz: rand(1, 3), spin: rand(-2, 2), t: 0 });
+  },
+  tickFalling(rig, dt) {
+    for (const f of rig.falling) {
+      f.t += dt; f.vy -= 22 * dt;
+      f.g.position.x += f.vx * dt; f.g.position.y = Math.max(-6, f.g.position.y + f.vy * dt); f.g.position.z += f.vz * dt;
+      f.g.rotation.x += f.spin * dt; f.g.rotation.z += f.spin * 0.7 * dt;
+      if (f.t > 1.8) { this.world.remove(f.g); f.done = true; }
+    }
+    if (rig.falling.some(f => f.done)) rig.falling = rig.falling.filter(f => !f.done);
   },
   // 3D portrait of one soldier for the menus, rendered once and cached as an image
   preview(skin, arch, size) {
@@ -606,11 +710,14 @@ const GFX = {
     return (this.pv.cache[key] = url);
   },
   // ---------------------------------------------------------------------------
-  camera(P, camX, push, shake) {
+  // intro (0..1): the 1.5s push-in toward a boss as its name card lands
+  camera(P, camX, push, shake, intro, focusZ) {
     const c = this.cam;
     const back = 12.5 - push * 4, h = 9.2 - push * 2.5;
-    c.position.set(camX + (shake ? rand(-1, 1) * shake * 0.02 : 0), h + (shake ? rand(-1, 1) * shake * 0.02 : 0), -(P - back));
-    _v.set(camX * 0.55, 0, -(P + 15));
+    const k = intro || 0, fz = focusZ || P + 15;
+    const cz = P - back + k * Math.max(0, fz - P - 14) * 0.55;
+    c.position.set(camX + (shake ? rand(-1, 1) * shake * 0.02 : 0), h + k * 1.5 + (shake ? rand(-1, 1) * shake * 0.02 : 0), -cz);
+    _v.set(camX * 0.55, k * 3.5, -lerp(P + 15, fz, k));
     c.lookAt(_v);
     this.sun.position.set(c.position.x - 6, 14, c.position.z + 4);
     this.sun.target.position.set(c.position.x, 0, c.position.z - 20);
@@ -626,10 +733,11 @@ const GFX = {
     return out;
   },
   // static-ish world: road tiles, curbs, scenery slots. Only rebuilt when the slot range moves.
-  layoutWorld(st, P) {
+  // plat: { z0, z1 } in the last fight's final phase: the road falls away, a floating platform remains
+  layoutWorld(st, P, plat) {
     const tile = 4, k0 = Math.floor((P - 16) / tile), k1 = k0 + 38;
     const slot = 8, s0 = Math.floor((P - 16) / slot), s1 = s0 + 22;
-    const key = st + ':' + k0;
+    const key = st + ':' + k0 + (plat ? ':plat' : '');
     if (this.slotKey === key) return;
     this.slotKey = key;
     const p = STAGES[st - 1].pal, K = this.k;
@@ -637,6 +745,7 @@ const GFX = {
     K.road.begin(); K.curb.begin(); K.dash.begin(); if (K.side) K.side.begin();
     for (let k = k0; k <= k1; k++) {
       const z = k * tile + tile / 2;
+      if (plat && (z < plat.z0 || z > plat.z1)) continue;
       K.road.add(0, -0.05, z, 0, 1, 1, 1, (k & 1) ? ra : rb);
       for (const sd of [-1, 1]) K.curb.add(sd * (ROAD + 0.22), 0.06, z, 0, 1, 1, 1, (k & 1) ? ea : eb);
       if (k % 2 === 0) for (const x of [-3, -1, 1, 3]) K.dash.add(x, 0.02, z);
@@ -644,7 +753,7 @@ const GFX = {
     }
     K.road.end(); K.curb.end(); K.dash.end(); if (K.side) K.side.end();
     for (const kit of this.scen) kit.begin();
-    for (let k = s0; k <= s1; k++) for (const sd of [-1, 1]) {
+    if (!plat) for (let k = s0; k <= s1; k++) for (const sd of [-1, 1]) {
       const r = hash3(k, sd, st), r2 = hash3(sd * 7, k, 3);
       const pi = Math.floor(r * this.scenProtos.length * 1.4);
       if (pi >= this.scenProtos.length) continue;
@@ -655,7 +764,7 @@ const GFX = {
       this.scen[pi].add(x, y, k * slot + r2 * 3, r * 6.28 * (pr.float ? 1 : 0.15), sc, sc, sc);
     }
     for (const kit of this.scen) kit.end();
-    if (K.torii) { K.torii.begin(); for (let z = Math.ceil((P - 10) / 26) * 26; z < P + 120; z += 26) K.torii.add(0, 0, z); K.torii.end(); }
+    if (K.torii) { K.torii.begin(); for (let z = Math.ceil((P + 3) / 26) * 26; z < P + 120; z += 26) K.torii.add(0, 0, z); K.torii.end(); } // only ahead: never across the camera
     // distant skyline that moves with the camera
     K.sky.begin();
     if (st !== 5) for (let i = 0; i < 24; i++) { const x = -70 + i * 6 + hash3(i, st, 1) * 4; const h = 6 + hash3(st, i, 2) * 26; K.sky.add(x, h / 2 - 2, P + 170 + hash3(i, 1, st) * 20, 0, 5, h, 5); }

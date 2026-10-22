@@ -1,12 +1,15 @@
 // ============================================================================
 // RENDER: sync game state into the Three.js scene, then draw the 2D overlay
-// (numbers, gate labels, HUD) on a canvas above it. Numbers are the art
+// (numbers, band values, HUD) on a canvas above it. Numbers are the art
 // direction, so they stay crisp 2D text with thick outlines.
 // ============================================================================
 let CV = null, HC = null, CX = null;
 const MENU = { stage: 1, P: 0, bodies: null };
 const SP = {}, SP2 = {}; // scratch projection results (no per-frame allocation)
-const C_WHITE = new THREE.Color(1, 1, 1), C_FLASH = new THREE.Color(2.4, 2.4, 2.4), C_ELITE = new THREE.Color(1.25, 1.08, 0.55), C_TMP = new THREE.Color();
+const C_WHITE = new THREE.Color(1, 1, 1), C_FLASH = new THREE.Color(2.4, 2.4, 2.4), C_ELITE = new THREE.Color(1.25, 1.08, 0.55), C_TMP = new THREE.Color(), C_TMP2 = new THREE.Color();
+const C_GREEN = new THREE.Color(BAND_GREEN), C_RED = new THREE.Color(BAND_RED);
+const ARCH_TINT = { crossbow: 0xffd27a, staff: 0xff9a3d, blade: 0xbff6ff, beam: 0x2bf0ff };
+const ALL_KITS = ['disc', 'cart', 'buff', 'debuff', 'gold', 'ring', 'bar', 'barrel', 'band', 'bandWall', 'bandEdge', 'post', 'postCap', 'divider', 'haz', 'tdisc', 'tracer', 'trail', 'orb', 'slash', 'stream', 'etracer', 'part', 'casing', 'mflash', 'crown', 'defender', 'platform'];
 
 function resize() {
   DPR = Math.min(3, window.devicePixelRatio || 1);
@@ -18,6 +21,7 @@ function resize() {
   SPR.clear();
 }
 function proj(x, z, y, out) { return GFX.project(x, y || 0, z, out || SP); }
+let lastRenderT = 0;
 
 function render() {
   const c = CX;
@@ -25,16 +29,21 @@ function render() {
   c.clearRect(0, 0, V.w, V.h);
   if (!GFX.ok) { bigText(c, 'WebGL is unavailable', V.cx, V.h / 2, 22, '#ffffff', { font: dispFont(22) }); return; }
   ASSETS.tick(G.t);
+  const rdt = Math.min(0.05, Math.max(0, G.t - lastRenderT)); lastRenderT = G.t;
   const menu = G.mode === 'menu';
   if (menu) renderMenu();
   else {
-    GFX.camera(G.P, G.camX, G.push ? easeInOut(G.push) : 0, G.shake);
-    GFX.layoutWorld(G.stage, G.P);
+    const b = G.boss;
+    const intro = G.bossIntro > 0 ? Math.sin(clamp(1 - G.bossIntro / 1.5, 0, 1) * Math.PI * 0.5) : (G.introOut = Math.max(0, (G.introOut || 0) - rdt * 1.5));
+    if (G.bossIntro > 0) G.introOut = intro;
+    GFX.camera(G.P, G.camX, G.push ? easeInOut(G.push) : 0, G.shake, intro, b ? b.z : 0);
+    const plat = b && b.platform ? { z0: G.P - 7, z1: b.z + 5 } : null;
+    GFX.layoutWorld(G.stage, G.P, plat);
     syncSquad(G.bodies, G.P, G.lead.x, G.phase === 'run', G.lead.vx);
     syncEnemies();
     syncProps();
     syncFx();
-    syncBase();
+    syncBase(rdt, plat);
   }
   GFX.R.render(GFX.scene, GFX.cam);
   if (!menu) {
@@ -60,27 +69,27 @@ function renderMenu() {
   GFX.setStage(st);
   G.arch = STAGES[st - 1].arch || (Store.d.run && Store.d.run.arch) || 'crossbow';
   GFX.buildSquad(G.arch, skinById(Store.d.skin));
-  GFX.camera(MENU.P - 6, lx * 0.4, 0, 0);
-  GFX.layoutWorld(st, MENU.P);
+  GFX.camera(MENU.P - 6, lx * 0.4, 0, 0, 0, 0);
+  GFX.layoutWorld(st, MENU.P, null);
   syncSquad(MENU.bodies, MENU.P, lx, true, Math.cos(G.t * 0.4));
   GFX.k.blob.end();
   for (const k of Object.values(GFX.enemyKits)) { k.begin(); k.end(); }
-  for (const n of ['coin', 'buff', 'debuff', 'gold', 'ring', 'bar', 'post', 'panel', 'frame', 'haz', 'bolt', 'orb', 'beam', 'slash', 'tracer', 'part', 'crown', 'defender', 'mflash']) { GFX.k[n].begin(); GFX.k[n].end(); }
+  for (const n of ALL_KITS) { GFX.k[n].begin(); GFX.k[n].end(); }
   if (GFX.base) GFX.base.visible = false;
-  if (GFX.boss) GFX.boss.visible = false;
+  if (GFX.rig) { GFX.rig.root.visible = false; if (GFX.rig.twin) GFX.rig.twin.visible = false; }
 }
 
 function syncSquad(bodies, P, lx, running, vx) {
   const K = GFX.k;
   K.body.begin(); K.leg.begin(); K.kai.begin(); K.blob.begin(); if (K.after) K.after.begin();
-  const rec = -(G.recoil || 0) * 0.07, sw = -(G.swing || 0) * 0.55;
+  const rec = -(G.recoil || 0) * 0.04;
   const a = ASSETS.units[G.arch];
   for (const b of bodies) {
     const z = P + b.oz + rec;
     const bob = running ? Math.abs(Math.sin(b.ph)) * 0.07 : 0;
     const sc = 1 + Math.sin(Math.min(1, b.pop) * Math.PI) * 0.28;
     const lean = running ? -0.08 : 0;
-    K.body.add(b.x, bob, z, 0, sc, sc, sc, null, lean + sw);
+    K.body.add(b.x, bob, z, 0, sc, sc, sc, null, lean);
     if (!a || !a.geo) {
       const swing = running ? Math.sin(b.ph) * 0.75 : 0;
       K.leg.add(b.x - 0.1 * sc, 0.42 * sc + bob, z, 0, sc, sc, sc, null, swing);
@@ -92,7 +101,7 @@ function syncSquad(bodies, P, lx, running, vx) {
   // Kai leads from the front, a head taller
   const ph = (G.t * 11) % TAU;
   const kb = running ? Math.abs(Math.sin(ph)) * 0.08 : 0;
-  K.kai.add(lx, kb, P + 0.3, -clamp(vx, -9, 9) * 0.03, 1.18, 1.18, 1.18, null, sw * 0.6, -clamp(vx, -9, 9) * 0.015);
+  K.kai.add(lx, kb, P + 0.3, -clamp(vx, -9, 9) * 0.03, 1.18, 1.18, 1.18, null, 0, -clamp(vx, -9, 9) * 0.015);
   const ks = running ? Math.sin(ph) * 0.8 : 0;
   K.leg.add(lx - 0.12, 0.5 + kb, P + 0.3, 0, 1.18, 1.18, 1.18, null, ks);
   K.leg.add(lx + 0.12, 0.5 + kb, P + 0.3, 0, 1.18, 1.18, 1.18, null, -ks);
@@ -106,10 +115,9 @@ function syncEnemies() {
   for (const k of Object.values(GFX.enemyKits)) k.begin();
   K.crown.begin();
   for (const e of G.enemies) {
-    if (e.z - G.P > 90 || e.inv) continue;
+    if (e.z - G.P > 80 || e.inv || e.dead) continue;
     const kit = GFX.enemyKit(e.look);
-    let sc = (LOOK_SCALE[e.look] || 1) * (e.elite ? 1.2 : 1);
-    if (e.look === 'slime') sc *= e.r / 0.45;
+    let sc = (LOOK_SCALE[e.look] || 1) * (e.elite ? 1.25 : 1) * (e.rival ? 1.3 : 1);
     let sx = sc, sy = sc, ry = 0, rz = 0, rx = 0, y = e.y || 0;
     if (e.look === 'slime' || e.look === 'bigslime') { const q = Math.sin(e.t * 12); sx *= 1 + q * 0.08; sy *= 1 - q * 0.1; }
     else y += Math.abs(Math.sin(e.t * 8)) * 0.05;
@@ -127,115 +135,167 @@ function syncEnemies() {
 }
 
 function syncProps() {
-  const K = GFX.k;
-  K.coin.begin();
-  for (const c of G.coins) if (c.z - G.P < 80) K.coin.add(c.x, c.y, c.z, c.spin);
-  K.coin.end();
+  const K = GFX.k, P = G.P;
+  K.disc.begin(); K.cart.begin();
+  for (const c of G.coins) if (c.z - P < 80) K.disc.add(c.x, 1.05 + Math.sin(G.t * 3 + c.z) * 0.08, c.z, Math.sin(c.spin) * 0.35, 1.15);
+  for (const c of G.carts) if (!c.taken && c.z - P < 90) K.cart.add(c.x, 0, c.z, c.x > 0 ? -0.3 : 0.3, 1.2);
+  K.disc.end(); K.cart.end();
   K.buff.begin(); K.debuff.begin(); K.gold.begin(); K.ring.begin();
   for (const p of G.picks) {
-    if (p.z - G.P > 95) continue;
+    if (p.z - P > 95) continue;
     const bob = 1 + Math.sin(G.t * 3 + p.x) * 0.15;
     const kit = p.kind === 'gold' ? K.gold : p.kind === 'debuff' ? K.debuff : K.buff;
     kit.add(p.x, bob, p.z, G.t * 2, p.kind === 'gold' ? 1.4 : 1);
     const pulse = 1 + 0.15 * Math.sin(G.t * 9);
     K.ring.add(p.x, 0.03, p.z, 0, (p.kind === 'gold' ? 2.2 : 1.25) * pulse, 1, (p.kind === 'gold' ? 2.2 : 1.25) * pulse, p.kind === 'debuff' ? 0xff2a40 : p.kind === 'gold' ? 0xffd23d : 0x5cff7a);
   }
-  K.buff.end(); K.debuff.end(); K.gold.end(); K.ring.end();
+  K.buff.end(); K.debuff.end(); K.gold.end();
   K.bar.begin();
-  for (const b of G.bars) if (!b.dead && b.z - G.P < 95) K.bar.add((b.x0 + b.x1) / 2, 0, b.z, 0, b.x1 - b.x0, 1, 1, b.flash > 0 ? C_FLASH : C_WHITE);
+  for (const b of G.bars) if (!b.dead && b.z - P < 95) K.bar.add((b.x0 + b.x1) / 2, 0, b.z, 0, b.x1 - b.x0, 1, 1, b.flash > 0 ? C_FLASH : C_WHITE);
   K.bar.end();
-  // gates: posts appear far out, the numbers resolve ~3s before you reach them
-  K.post.begin(); K.panel.begin(); K.frame.begin();
-  for (const g of G.gates) {
-    if (g.done || g.z - G.P > 110 || g.z < G.P - 1) continue;
-    const n = g.set ? g.set.length : 2;
-    const spans = gateSpans(n);
-    const sel = g.set ? spans.findIndex(([a, b]) => G.lead.x >= a && G.lead.x < b) : -1;
-    for (let i = 0; i <= n; i++) K.post.add(-ROAD + i * ROAD * 2 / n, 0, g.z);
-    if (!g.set) continue;
-    for (let i = 0; i < n; i++) {
-      const [a, b] = spans[i];
-      C_TMP.set(gateColor(g.set[i]));
-      if (i === sel) C_TMP.multiplyScalar(1.35);
-      K.panel.add((a + b) / 2, 1.8, g.z, 0, b - a - 0.25, 3.3, 1, C_TMP);
-      K.frame.add((a + b) / 2, 3.5, g.z, 0, b - a - 0.1, 1, 1, i === sel ? C_WHITE : C_TMP);
+  // barrels: red drums with a pulsing danger ring the size of their blast
+  K.barrel.begin();
+  for (const br of G.barrels) {
+    if (br.dead || br.z - P > 95) continue;
+    const hot = 1 - br.hp / br.max;
+    K.barrel.add(br.x, 0, br.z, 0, 1.15, 1.15, 1.15, br.flash > 0 ? C_FLASH : C_TMP.setRGB(1 + hot * 0.6, 1, 1));
+    const pulse = 0.85 + 0.15 * Math.sin(G.t * (8 + hot * 14));
+    K.ring.add(br.x, 0.05, br.z, 0, br.blast * pulse, 1, br.blast * pulse, 0xff3b2a);
+  }
+  K.barrel.end();
+  // gate bands: translucent green/red floor zones across the road, posts at their edges
+  K.band.begin(); K.bandWall.begin(); K.bandEdge.begin(); K.post.begin(); K.postCap.begin();
+  for (const s of G.sets) {
+    if (s.done || s.z - P > 120 || s.z < P - 4) continue;
+    for (let i = 0; i < s.bands.length; i++) {
+      const b = s.bands[i], w = b.x1 - b.x0, cx = (b.x0 + b.x1) / 2;
+      const base = b.red ? C_RED : C_GREEN;
+      const glow = 1 + b.pop * 0.9 + (b.flipped ? 0.25 : 0);
+      C_TMP.copy(base).multiplyScalar(glow);
+      K.band.add(cx, 0.035, s.z + 1.5, 0, w - 0.1, 1, 3, C_TMP);
+      K.bandWall.add(cx, 1.3, s.z, 0, w - 0.1, 2.6, 1, C_TMP); // a faint shimmer curtain on the band's front edge
+      C_TMP2.copy(base).multiplyScalar(1.4 + b.pop);
+      K.bandEdge.add(cx, 0.06, s.z, 0, w - 0.1, 1, 1, C_TMP2);
+      K.bandEdge.add(cx, 0.06, s.z + 3, 0, w - 0.1, 1, 1, C_TMP2);
+    }
+    for (let i = 0; i <= s.bands.length; i++) {
+      const x = i === s.bands.length ? ROAD : s.bands[i].x0;
+      K.post.add(x, 0, s.z);
+      const nb = s.bands[Math.min(i, s.bands.length - 1)];
+      K.postCap.add(x, 3.7, s.z, G.t * 2, 1, 1, 1, nb.red ? C_RED : C_GREEN);
     }
   }
-  K.post.end(); K.panel.end(); K.frame.end();
-  K.haz.begin();
-  const zone = (x0, x1, z0, z1, col, k) => K.haz.add((x0 + x1) / 2, 0.04, (z0 + z1) / 2, 0, x1 - x0, 1, z1 - z0, C_TMP.setHex(col).multiplyScalar(k));
-  for (const h of G.hazards) zone(h.x0, h.x1, G.P - 3, G.P + (h.kind === 'corrupt' ? 30 : 4), h.kind === 'slime' ? 0x36d6b5 : 0x965aff, h.active ? 1 : 0.5 + 0.5 * Math.abs(Math.sin(G.t * 10)));
-  const zz = (G.boss && G.boss.zone) || (G.base && G.base.zone);
-  if (zz) { const w = G.boss && G.boss.zone ? G.boss : G.base; zone(zz[0], zz[1], G.P - 4, G.P + 4, G.boss && G.boss.kind === 'warden' ? 0xff7a1a : 0xff2846, 0.5 + 0.5 * Math.abs(Math.sin(G.t * 12)) + 0.5 * (1 - w.wind / (w.windMax || 0.8))); }
-  K.haz.end();
+  K.band.end(); K.bandWall.end(); K.bandEdge.end(); K.post.end(); K.postCap.end();
+  // split-road divider
+  K.divider.begin();
+  for (const sp of G.splits) {
+    if (sp.z1 < P - 6 || sp.z0 > P + 110) continue;
+    for (let z = Math.max(sp.z0, P - 6) + 2; z < Math.min(sp.z1, P + 110); z += 4) K.divider.add(0, 0, z);
+  }
+  K.divider.end();
+  // hazards + telegraphs on the road
+  K.haz.begin(); K.tdisc.begin();
+  const zone = (x0, x1, z0, z1, col, k) => K.haz.add((x0 + x1) / 2, 0.045, (z0 + z1) / 2, 0, x1 - x0, 1, z1 - z0, C_TMP.setHex(col).multiplyScalar(k));
+  for (const h of G.hazards) zone(h.x0, h.x1, P - 3, P + (h.kind === 'corrupt' ? 30 : 6), h.kind === 'fire' ? 0xff6a1a : 0x965aff, h.active ? 1 + Math.sin(G.t * 20) * 0.15 : 0.5 + 0.5 * Math.abs(Math.sin(G.t * 10)));
+  const B = G.base;
+  if (B && B.zone && !B.dead) zone(B.zone[0], B.zone[1], P - 4, P + 4, 0xff2846, 0.5 + 0.5 * Math.abs(Math.sin(G.t * 12)) + 0.5 * (1 - B.wind / (B.windMax || 1)));
+  const a = G.boss && G.boss.atk;
+  if (a) {
+    const k = 1 - a.wind / a.max, blink = 0.5 + 0.5 * Math.abs(Math.sin(G.t * (6 + k * 18))) + k * 0.6;
+    const col = G.boss.kind === 'warden' ? 0xff7a1a : G.boss.kind === 'brine' ? 0x36d6b5 : 0xff2846;
+    if (a.type === 'sweep') zone(a.x0, a.x1, P - 4, P + 5, col, blink);
+    else if (a.type === 'charge') zone(a.x0, a.x1, P - 4, G.boss.z - 2, col, blink);
+    else if (a.type === 'volley') for (const cx of a.cols) zone(cx - a.cw / 2, cx + a.cw / 2, P - 4, P + 12, col, blink);
+    else if (a.type === 'slam') { K.tdisc.add(a.cx, 0.05, P, 0, a.r, 1, a.r, C_TMP.setHex(col).multiplyScalar(blink)); K.ring.add(a.cx, 0.07, P, 0, a.r * (0.3 + 0.7 * k), 1, a.r * (0.3 + 0.7 * k), 0xffffff); }
+  }
+  K.haz.end(); K.tdisc.end();
+  for (const bl of G.blasts || []) { const k = bl.t / 0.5; K.ring.add(bl.x, 0.1, bl.z, 0, bl.r * (0.3 + k), 1, bl.r * (0.3 + k), C_TMP.setRGB(1, 0.6 * (1 - k) + 0.2, 0.1)); }
+  K.ring.end();
 }
 
 function syncFx() {
-  const K = GFX.k, st = G.stage;
-  K.bolt.begin(); K.orb.begin(); K.beam.begin(); K.slash.begin(); K.tracer.begin(); K.part.begin(); K.mflash.begin();
-  for (const s of G.shots) {
-    if (s.kind === 'bolt') {
-      const k = Math.min(1, s.t / s.T);
-      const x = lerp(s.x0, s.x1, k), z = lerp(s.z0, s.z1, k), y = 0.9 + s.h * 4 * k * (1 - k);
-      const dz = s.z1 - s.z0, dx = s.x1 - s.x0, vy = s.h * 4 * (1 - 2 * k);
-      K.bolt.add(x, y, z, Math.atan2(-dx, dz), 1.3, 1.3, 1.3, null, Math.atan2(vy, Math.hypot(dx, dz)));
-    } else K.orb.add(s.x, s.y, s.z, s.t * 6, 1 + Math.sin(s.t * 30) * 0.15);
+  const K = GFX.k;
+  K.tracer.begin(); K.trail.begin(); K.orb.begin(); K.slash.begin(); K.stream.begin(); K.etracer.begin(); K.part.begin(); K.casing.begin(); K.mflash.begin();
+  const tint = ARCH_TINT[G.arch] || 0xffffff;
+  for (let i = 0; i < SHOTS.n; i++) {
+    const s = SHOTS.a[i];
+    if (!s.vis) continue;
+    if (s.kind === 1) { K.orb.add(s.x, s.y, s.z, s.t * 6, 1.25 + Math.sin(s.t * 30) * 0.15); K.trail.add(s.x, s.y, s.z - 0.6, 0, 3, 3, 1.2, tint); continue; }
+    if (s.kind === 2) { K.slash.add(s.x, s.y, s.z, Math.PI, 1.1 + s.t * 0.8, 1, 1.1, tint); continue; }
+    const len = Math.min(s.t * s.vz, s.kind === 3 ? 2.6 : 1.5);
+    K.tracer.add(s.x, s.y, s.z, 0, 1.6, 1.6, s.kind === 3 ? 2.2 : 1.6);
+    K.trail.add(s.x, s.y, s.z - len / 2 - 0.2, 0, s.kind === 3 ? 1.6 : 2, s.kind === 3 ? 1.6 : 2, len, tint);
   }
-  const beamCol = st === 4 ? 0xff2bd6 : 0x2bf0ff;
-  for (const b of G.beams) {
-    const len = Math.max(0.5, b.z1 - b.z0);
-    K.beam.add(b.x, 1.0, (b.z0 + b.z1) / 2, 0, 1 + b.t * 6, 1 + b.t * 6, len, beamCol);
-    K.beam.add(b.x, 1.0, (b.z0 + b.z1) / 2, 0, 0.4, 0.4, len, 0xffffff);
+  // past 25 guns the front rank pours one thick stream: width and brightness grow with the count
+  if (G.N > BAL.gunCap && (G.phase === 'run' || (G.phase === 'assault' && G.bossIntro <= 0)) && G.mode === 'play') {
+    const k = Math.sqrt(G.N / BAL.gunCap), z0 = G.P + 0.7, z1 = Math.max(z0 + 2, Math.min(G.streamEnd || z0 + reach(), G.P + reach()));
+    // rails of fire across the front rank: thicker and brighter as the count climbs
+    const w = Math.min(2 * formHalf(), 4.2) * 0.8, rails = Math.min(6, 2 + Math.floor(k * 1.4)), th = 0.07 + 0.035 * k;
+    for (let i = 0; i < rails; i++) {
+      const x = G.lead.x + (rails === 1 ? 0 : (i / (rails - 1) - 0.5) * w), fl = 0.8 + Math.random() * 0.4;
+      K.stream.add(x, 1.0, (z0 + z1) / 2, 0, th * 2.6 * fl, th * 2.6 * fl, z1 - z0, C_TMP.setHex(tint).multiplyScalar(0.45 + 0.08 * k));
+      K.stream.add(x, 1.0, (z0 + z1) / 2, 0, th * fl, th * fl, z1 - z0, C_TMP.setRGB(1.5, 1.5, 1.4));
+    }
   }
-  for (const s of G.slashes) K.slash.add(s.x, 0.8, s.z, Math.PI, s.w / 2 * (1.2 - s.t), 1, 1.4);
-  for (const t of G.tracers) {
-    const y0 = t.y0 == null ? 3 : t.y0, y1 = t.y1 == null ? 0.7 : t.y1;
-    const dx = t.x1 - t.x0, dz = t.z1 - t.z0, dy = y1 - y0, len = Math.hypot(dx, dz, dy);
-    K.tracer.add((t.x0 + t.x1) / 2, (y0 + y1) / 2, (t.z0 + t.z1) / 2, Math.atan2(-dx, dz), 1, 1, len, null, Math.atan2(dy, Math.hypot(dx, dz)));
-  }
-  for (const p of G.parts) {
-    if (p.kind === 'gem' || p.kind === 'confetti') continue;
+  for (let i = 0; i < ESHOTS.n; i++) { const s = ESHOTS.a[i]; K.etracer.add(s.x, s.y, s.z, Math.atan2(-s.vx, -s.vz), 1.5); }
+  for (let i = 0; i < FX.n; i++) {
+    const p = FX.a[i];
     const a = clamp(p.life / p.max, 0, 1);
-    if (p.kind === 'flash') { K.mflash.add(p.x, p.y, p.z, 0, 0.8 + a); continue; }
-    const s = p.kind === 'puff' ? p.size * (1.8 - a) : p.size * (0.4 + a * 0.8);
+    if (p.kind === FXK.flash) { K.mflash.add(p.x, p.y, p.z, Math.random() * 3, p.size * 1.5, p.size * 1.5, p.size * 2.2, p.col); continue; }
+    if (p.kind === FXK.casing) { K.casing.add(p.x, p.y, p.z, p.life * 20, 1, 1, 1, null, p.life * 15); continue; }
+    const s = p.kind === FXK.puff ? p.size * (1.8 - a) : p.size * (0.4 + a * 0.8);
     K.part.add(p.x, p.y, p.z, p.life * 9, s, s, s, p.col);
   }
-  K.bolt.end(); K.orb.end(); K.beam.end(); K.slash.end(); K.tracer.end(); K.part.end();
+  K.tracer.end(); K.trail.end(); K.orb.end(); K.slash.end(); K.stream.end(); K.etracer.end(); K.part.end(); K.casing.end();
   // muzzle flashes stay open for the base defenders (closed in syncBase)
 }
 
-function syncBase() {
+const BOSS_TINT = [new THREE.Color(1, 1, 1), new THREE.Color(1.15, 0.85, 0.8), new THREE.Color(1.3, 0.62, 0.6)];
+function syncBase(dt, plat) {
   const K = GFX.k;
-  K.defender.begin();
+  K.defender.begin(); K.platform.begin();
   const B = G.base;
   const baseZ = B ? B.z : G.baseZ;
-  const bossLevel = isStageBoss(G.level);
+  const bossLevel = isStageBoss(G.level) && !G.endless;
   if (GFX.base) {
-    const show = !bossLevel && !(B && B.dead) && baseZ - G.P < 170;
+    const show = !bossLevel && !G.endless && !(B && B.dead) && baseZ - G.P < 170;
     GFX.base.visible = show;
     if (show) {
       GFX.base.position.set(B && B.shake ? rand(-1, 1) * B.shake * 0.03 : 0, 0, -baseZ);
       for (let i = 0; i < 8; i++) {
         const x = -4.9 + i * 1.4;
         K.defender.add(x, 3.8, baseZ - 0.1, Math.PI);
-        if (B && !B.dead && ((Math.floor(G.t * 7) + i) % 5 === 0)) K.mflash.add(x, 4.3, baseZ + 0.4, 0, 1.4);
+        if (B && !B.dead && ((Math.floor(G.t * 7) + i) % 5 === 0)) K.mflash.add(x, 4.3, baseZ + 0.4, 0, 1.4, 1.4, 1.4, 0xffb02e);
       }
     }
   }
-  if (G.boss && B && !B.dead) {
-    const b = G.boss;
-    const m = GFX.bossMesh(b.kind, b.arch);
-    m.visible = true;
-    const breathe = 1 + Math.sin(G.t * 2) * 0.02 + b.flash * 0.6;
-    m.position.set(b.slamAnim ? rand(-0.1, 0.1) : 0, 0, -b.z);
-    m.scale.set(breathe, b.kind === 'brine' ? 1 + Math.sin(G.t * 2.2) * 0.05 : breathe, breathe);
-    const w = m.userData.weapon;
-    if (w) {
-      const wind = b.zone ? 1 - b.wind / (b.windMax || 2) : 0;
-      w.rotation.z = b.swingT > 0 ? lerp(1.4, -1.0, 1 - b.swingT / 0.4) : 0.3 + wind * 1.1;
-    }
-  } else if (GFX.boss) GFX.boss.visible = false;
-  K.defender.end(); K.mflash.end();
+  const b = G.boss;
+  if (b && B && !B.dead) {
+    const rig = GFX.bossRig(b.kind, b.arch);
+    rig.root.visible = true;
+    while (rig.broken < b.phase) { rig.broken++; GFX.breakOff(rig, rig.broken); }
+    GFX.tickFalling(rig, dt);
+    const ph = Math.min(2, b.phase);
+    rig.mat.color.copy(BOSS_TINT[ph]);
+    if (b.flash > 0) rig.mat.color.multiplyScalar(1.6);
+    // heavy idle: breathe, sway, and lean into the telegraph
+    const breathe = 1 + Math.sin(G.t * 1.8) * 0.025, lean = b.atk ? (1 - b.atk.wind / b.atk.max) : 0;
+    const place = (root, body, x, sc) => {
+      root.position.set(x + (b.recoil ? rand(-0.08, 0.08) * b.recoil : 0), 0, -b.z);
+      root.scale.set(sc * breathe, sc * (b.kind === 'brine' ? 1 + Math.sin(G.t * 2.2) * 0.06 : breathe), sc * breathe);
+      body.rotation.z = Math.sin(G.t * 0.7) * 0.04;
+      body.rotation.x = -lean * 0.18 + b.recoil * 0.12;
+      body.position.y = Math.sin(G.t * 1.4) * 0.1;
+    };
+    if (b.split && rig.twin) { place(rig.root, rig.body, b.x - 2.6, 0.62); rig.twin.visible = true; place(rig.twin, rig.twinBody, b.x + 2.6, 0.62); }
+    else { place(rig.root, rig.body, b.x, 1); if (rig.twin) rig.twin.visible = false; }
+    const swing = w => { if (!w) return; w.rotation.z = b.recoil > 0 ? lerp(1.4, -1.1, 1 - b.recoil) : 0.25 + lean * 1.2 + Math.sin(G.t * 1.3) * 0.08; };
+    swing(rig.weapon); if (b.split) swing(rig.twinWeapon);
+    for (const a in rig.inners) rig.inners[a].visible = a === b.arch;
+    for (const a in rig.weapons) { rig.weapons[a].visible = a === b.arch; swing(rig.weapons[a]); }
+    if (plat) K.platform.add(0, 0, (plat.z0 + plat.z1) / 2, 0, 7.5, 3, (plat.z1 - plat.z0) / 2 + 2);
+  } else if (GFX.rig) { GFX.rig.root.visible = false; if (GFX.rig.twin) GFX.rig.twin.visible = false; GFX.tickFalling(GFX.rig, dt); }
+  K.defender.end(); K.mflash.end(); K.platform.end();
   K.blob.end();
 }
 
@@ -243,65 +303,77 @@ function syncBase() {
 // Overlay text in world space
 // ---------------------------------------------------------------------------
 function drawWorldLabels(c) {
-  // gate labels: one op, or two stacked for a compound gate
-  for (const g of G.gates) {
-    if (g.done || !g.set || g.z - G.P > 3.2 * G.v + 2) continue;
-    const vis = clamp((3.2 * G.v - (g.z - G.P)) / (0.6 * G.v), 0, 1);
-    const spans = gateSpans(g.set.length);
-    for (let i = 0; i < g.set.length; i++) {
-      const [a, b] = spans[i];
-      const q = proj((a + b) / 2, g.z, 2.1);
+  const P = G.P;
+  // band values: floating large above each band; they tick while you shoot them
+  for (const s of G.sets) {
+    if (s.done || s.z - P > 95 || s.z < P - 1) continue;
+    const vis = clamp((95 - (s.z - P)) / 20, 0, 1);
+    for (const b of s.bands) {
+      const cx = (b.x0 + b.x1) / 2;
+      const q = proj(cx, s.z + 0.4, 2.9);
       if (!q.vis) continue;
-      const w = (b - a) * q.s;
-      const lines = g.set[i].label;
-      const px = Math.max(lines.length > 1 ? 19 : 24, Math.min(w * 0.34, (lines.length > 1 ? 0.75 : 1.05) * q.s));
-      c.globalAlpha = 0.25 + vis * 0.75;
-      if (lines.length === 1) bigText(c, lines[0], q.x, q.y, px, '#ffffff', { maxW: Math.max(w * 0.9, px * 2.6) });
-      else lines.forEach((l, k) => bigText(c, l, q.x, q.y + (k - 0.5) * px * 1.02, px, '#ffffff', { maxW: Math.max(w * 0.9, px * 2.6) }));
-      if (hasRelic('abacus')) bigText(c, '= ' + fmtInt(g.set[i].result), q.x, q.y + px * (lines.length > 1 ? 1.4 : 0.95), Math.max(12, px * 0.5), '#fff7c2');
+      const w = (b.x1 - b.x0) * q.s;
+      const px = clamp(q.s * 1.15, 16, 60) * (1 + b.pop * 0.35);
+      c.globalAlpha = 0.35 + vis * 0.65;
+      bigText(c, bandLabel(b), q.x, q.y, px, b.red ? '#ffb3bd' : b.flipped ? '#d8ffb0' : '#c9ffd6', { maxW: Math.max(w * 0.92, px * 2), lw: Math.max(4, px * 0.2), ink: b.red ? '#4a0010' : '#003a12' });
+      if (hasRelic('abacus')) bigText(c, '= ' + fmtInt(applyBand(G.N, b, hasRelic('remainder'))), q.x, q.y + px * 0.85, Math.max(12, px * 0.42), '#fff7c2');
     }
   }
   c.globalAlpha = 1;
   for (const b of G.bars) {
-    if (b.dead || b.z - G.P > 60) continue;
-    const q = proj((b.x0 + b.x1) / 2, b.z, 1.6);
-    if (q.vis) bigText(c, fmtInt(b.hp), q.x, q.y, clamp(q.s * 0.7, 11, 30), '#ffffff', { maxW: (b.x1 - b.x0) * q.s });
+    if (b.dead || b.z - P > 60) continue;
+    const q = proj((b.x0 + b.x1) / 2, b.z, 1.7);
+    if (q.vis) bigText(c, fmtHP(Math.ceil(b.hp)), q.x, q.y, clamp(q.s * 0.6, 11, 28), '#ffffff', { maxW: (b.x1 - b.x0) * q.s });
   }
-  for (const e of G.enemies) {
-    if (e.inv || e.z - G.P > 55 || e.z < G.P - 1) continue;
-    const sc = (LOOK_SCALE[e.look] || 1) * (e.elite ? 1.2 : 1);
-    const q = proj(e.x, e.z, (e.y || 0) + 1.55 * sc + (e.look === 'wisp' || e.look === 'ghost' ? 0.4 : 0));
+  for (const br of G.barrels) {
+    if (br.dead || br.z - P > 60) continue;
+    const q = proj(br.x, br.z, 1.9);
+    if (q.vis) bigText(c, fmtHP(Math.ceil(br.hp)), q.x, q.y, clamp(q.s * 0.55, 11, 26), '#ff6a5a');
+  }
+  // coin discs carry their value; carts show their bundle
+  for (const d of G.coins) {
+    if (d.z - P > 55 || d.z < P) continue;
+    const q = proj(d.x, d.z - 0.1, 1.05);
+    if (q.vis) bigText(c, fmtInt(d.val), q.x, q.y, clamp(q.s * 0.42, 9, 24), '#5a3200', { ink: '#fff3c4', lw: 2.5, shadow: false });
+  }
+  for (const k of G.carts) {
+    if (k.taken || k.z - P > 70 || k.z < P) continue;
+    const q = proj(k.x, k.z, 3.1);
+    if (q.vis) bigText(c, '+' + fmtInt(k.val), q.x, q.y, clamp(q.s * 0.6, 12, 30), '#ffd23d');
+  }
+  // enemy HP: the nearest ones only, so the crowd reads as a wall first
+  let shown = 0;
+  for (let i = 0; i < ESORT.length && shown < 28; i++) {
+    const e = ESORT[i];
+    if (e.dead || e.inv || e.z - P > 34 || e.z < P - 1) continue;
+    const sc = (LOOK_SCALE[e.look] || 1) * (e.elite ? 1.25 : 1);
+    const q = proj(e.x, e.z, (e.y || 0) + 1.5 * sc + (e.look === 'wisp' || e.look === 'ghost' ? 0.4 : 0));
     if (!q.vis) continue;
-    bigText(c, fmtHP(e.hp), q.x, q.y, clamp(q.s * 0.42 * Math.sqrt(sc), 10, 32), e.elite ? '#ffd23d' : e.rival ? '#9ff6ff' : '#ffffff');
+    shown++;
+    bigText(c, fmtHP(Math.ceil(e.hp)), q.x, q.y, clamp(q.s * 0.36 * Math.sqrt(sc), 9, 24), e.elite ? '#ffd23d' : e.rival ? '#9ff6ff' : '#ffffff');
   }
-  // base / boss HP
+  // base HP: big and red above the compound; the number itself is the drama
   const B = G.base;
-  if (!isStageBoss(G.level) && !(B && B.dead) && (B || G.baseZ - G.P < 90)) {
-    const q = proj(0, B ? B.z : G.baseZ, 6.6);
+  if (!G.endless && !isStageBoss(G.level) && !(B && B.dead) && (B || G.baseZ - P < 95)) {
+    const q = proj(0, B ? B.z : G.baseZ, 7.2);
     if (q.vis) {
-      const px = clamp(q.s * 1.4, 16, 52);
-      cel(c, P.rr(q.x - px * 2.4, q.y - px * 0.62, px * 4.8, px * 1.24, 10), '#14141f', '#0a0a12', '#3a3a55', 3, 3);
-      bigText(c, fmtHP(B ? Math.max(0, B.hp) : G.baseMax), q.x, q.y, px, B && B.hp / B.max < 0.25 ? '#ff9aa9' : '#ffffff', { maxW: px * 4.5 });
+      const hp = B ? Math.max(0, B.hp) : G.baseMax;
+      const px = clamp(q.s * 1.9, 22, 84) * (1 + (B && B.shake ? B.shake * 0.012 : 0));
+      bigText(c, fmtHP(Math.ceil(hp)), q.x, q.y, px, B && B.hp / B.max < 0.25 ? '#ff7a8a' : '#ff3b4f', { maxW: V.w - 20, lw: Math.max(6, px * 0.16) });
     }
   }
-  if (G.boss && B && !B.dead) {
-    const q = proj(0, G.boss.z, 9.2);
-    if (q.vis) bigText(c, fmtHP(Math.max(0, B.hp)), q.x, Math.max(V.top + 120, q.y), clamp(q.s * 1.2, 22, 48), '#ffffff');
-    if (G.boss.kind === 'echo' || G.boss.kind === 'otherkai') { const q2 = proj(0, G.boss.z, 4.5, SP2); if (q2.vis) bigText(c, fmtInt(G.boss.mirror), q2.x, q2.y, 30, G.boss.kind === 'echo' ? '#2bf0ff' : '#ffffff'); }
-  }
   // squad count, large, above the formation
-  const top = proj(G.lead.x, G.P + 1.6, 3.4);
+  const top = proj(G.lead.x, P + 0.6, 2.5);
   const px = 46 * (1 + (G.punch || 0) * 0.45);
   bigText(c, fmtInt(G.N), top.x, top.y, px, G.punch > 0.3 ? '#fff7c2' : '#ffffff', { lw: 8 });
-  bigText(c, archDef().weapon.toUpperCase() + ' · HIT ' + fmtInt(volley(G.phase === 'assault')), top.x, top.y + px * 0.62, 12, '#ffe58a', { lw: 3.5, font: dispFont(12) });
   for (const tx of G.texts) {
     const q = proj(tx.x, tx.z, tx.y);
     if (!q.vis) continue;
     const age = tx.max - tx.life;
-    const sc = age < 0.12 ? 0.5 + age / 0.12 * 0.7 : 1.2 - Math.min(0.2, age - 0.12);
-    c.globalAlpha = clamp(tx.life * 2.5, 0, 1);
+    const sc = age < 0.1 ? 0.5 + age / 0.1 * 0.7 : 1.2 - Math.min(0.2, age - 0.1);
+    c.globalAlpha = clamp(tx.life * (tx.small ? 3 : 2.5), 0, 1);
     const isWord = /[A-Z]/.test(tx.text);
-    bigText(c, tx.text, q.x, q.y, tx.size * sc, tx.col, isWord ? { font: dispFont(tx.size * sc), lw: Math.max(3, tx.size * 0.22) } : {});
+    bigText(c, tx.text, q.x, q.y, tx.size * sc, tx.col, isWord ? { font: dispFont(tx.size * sc), lw: Math.max(3, tx.size * 0.22) } : { lw: tx.small ? 3 : undefined });
   }
   c.globalAlpha = 1;
 }
@@ -313,7 +385,7 @@ function drawScreenParts(c) {
 }
 
 // ---------------------------------------------------------------------------
-// HUD: pause (left), progress bar with flag, coins (right), streak, buffs
+// HUD: pause (left), progress bar with a flag and % (center), coins (right). Nothing else.
 // ---------------------------------------------------------------------------
 function drawHUD(c, t) {
   const y = V.hudY + 22;
@@ -326,36 +398,31 @@ function drawHUD(c, t) {
   const cx = V.w - 12 - cw;
   iconCoin(c, cx - 14, y, 10 * (1 + HUD.coinPulse * 0.35));
   bigText(c, coinStr, cx, y, 24, '#ffe58a', { align: 'left' });
-  for (const pl of HUD.plus) { c.globalAlpha = 1 - pl.t / 0.9; bigText(c, '+' + pl.n, V.w - 14, y + 22 + pl.t * 20, 16, '#ffe58a', { align: 'right' }); }
+  for (const pl of HUD.plus) { c.globalAlpha = 1 - pl.t / 0.9; bigText(c, '+' + fmtInt(pl.n), V.w - 14, y + 24 + pl.t * 22, 17, '#ffe58a', { align: 'right' }); }
   c.globalAlpha = 1;
-  const gemStr = String(Store.d.gems);
-  HUD.gemX = V.w - 30; HUD.gemY = y + 26;
-  if (!HUD.plus.length) { iconGem(c, V.w - 40 - gemStr.length * 6, y + 26, 7 * (1 + HUD.gemPulse * 0.4)); bigText(c, gemStr, V.w - 12, y + 26, 16, '#9fefff', { align: 'right' }); }
-  const bx = p.x + p.w + 14, bw = cx - 30 - bx, by = y - 6;
+  HUD.gemX = V.w - 30; HUD.gemY = y;
+  const bx = p.x + p.w + 14, bw = cx - 34 - bx, by = y - 6;
   if (G.phase === 'run' || !G.base) {
-    const k = clamp(G.P / G.Lr, 0, 1);
+    const k = G.endless ? 0 : clamp(G.P / G.Lr, 0, 1);
     cel(c, P.rr(bx, by, bw, 12, 6), '#14141f', null, null, 2.5);
     flat(c, P.rr(bx + 2, by + 2, Math.max(8, (bw - 4) * k), 8, 4), STAGES[G.stage - 1].pal.accent, 0);
-    for (const g of G.gates) { const gx = bx + bw * clamp(g.z / G.Lr, 0, 1); c.fillStyle = g.done ? 'rgba(255,255,255,0.35)' : '#ffffff'; c.fillRect(gx - 1, by + 2, 2, 8); }
     line(c, bx + bw, by - 10, bx + bw, by + 12, INK, 3);
     flat(c, P.poly([bx + bw, by - 10, bx + bw + 14, by - 5, bx + bw, by]), '#ff3b5c', 2);
-    bigText(c, 'LV ' + G.level, bx, by + 24, 13, '#ffffff', { align: 'left', font: dispFont(13), lw: 3 });
+    bigText(c, G.endless ? fmtInt(G.P) + 'm' : Math.floor(k * 100) + '%', bx + bw / 2, by + 24, 14, '#ffffff', { lw: 3 });
   } else {
     const B = G.base, k = clamp(B.timer / G.timerMax, 0, 1), hot = B.timer < 5;
     cel(c, P.rr(bx, by - 2, bw, 16, 8), '#14141f', null, null, 2.5);
     flat(c, P.rr(bx + 2, by, Math.max(8, (bw - 4) * k), 12, 6), hot ? '#ff3b5c' : '#ffd23d', 0);
     bigText(c, Math.max(0, B.timer).toFixed(1), bx + bw / 2, by + 28, hot ? 26 + Math.sin(t * 20) * 2 : 22, hot ? '#ff9aa9' : '#ffffff');
   }
-  let rowY = by + 46;
-  if (G.streak >= 2) { bigText(c, 'EXACT ×' + G.streak, V.cx, rowY, 18 * (1 + Math.min(0.4, G.streak * 0.03)), '#ffd23d', { font: dispFont(18), lw: 4 }); rowY += 24; }
-  let chipX = V.cx - 72;
-  for (const [d, info, col] of [[G.buff, G.buff && BUFFS[G.buff.id], '#3fdc5c'], [G.debuff, G.debuff && DEBUFFS[G.debuff.id], '#e8283e']]) {
-    if (!d) continue;
-    const w = 68;
-    cel(c, P.rr(chipX, rowY - 10, w, 20, 6), '#14141f', null, null, 2);
-    c.fillStyle = d.mag > 1 ? '#ffd23d' : col; c.globalAlpha = 0.5; c.fillRect(chipX + 2, rowY - 8, (w - 4) * d.t / d.max, 16); c.globalAlpha = 1;
-    bigText(c, info.short, chipX + w / 2, rowY, 12, '#ffffff', { font: dispFont(12), lw: 3, maxW: w - 6 });
-    chipX += w + 8;
+  // boss: an HP bar and the raw HP number above it
+  if (G.boss && G.base && !G.base.dead && !G.nameCard) {
+    const B = G.base, k = clamp(B.hp / B.max, 0, 1);
+    const w = V.w - 40, x = 20, yy = by + 84;
+    cel(c, P.rr(x, yy, w, 14, 7), '#14141f', null, null, 2.5);
+    flat(c, P.rr(x + 2, yy + 2, Math.max(6, (w - 4) * k), 10, 5), k > 2 / 3 ? '#ff3b5c' : k > 1 / 3 ? '#ff7a2e' : '#ffd23d', 0);
+    for (const m of [1 / 3, 2 / 3]) { c.fillStyle = INK; c.fillRect(x + w * m - 1, yy + 1, 2, 12); }
+    bigText(c, fmtHP(Math.ceil(B.hp)), V.cx, yy - 16, 26, "#ff6a7a", { lw: 5 });
   }
 }
 
@@ -378,7 +445,7 @@ function drawOverlays(c, t) {
     const k = n.t / n.max;
     const inK = easeOutCubic(Math.min(1, n.t / 0.4)), outK = k > 0.85 ? (k - 0.85) / 0.15 : 0;
     c.save(); c.globalAlpha = 1 - outK;
-    const y = V.top + (V.bot - V.top) * 0.35;
+    const y = V.top + (V.bot - V.top) * 0.2;
     c.fillStyle = 'rgba(0,0,0,0.75)'; c.fillRect(0, y - 66, V.w, 132);
     c.fillStyle = '#ff3b5c'; c.fillRect(0, y - 66, V.w * inK, 5); c.fillRect(V.w * (1 - inK), y + 61, V.w, 5);
     for (let i = 0; i < 12; i++) line(c, (i * 47 + t * 600) % (V.w + 60) - 30, y - 56 + (i * 13) % 112, (i * 47 + t * 600) % (V.w + 60) - 90, y - 56 + (i * 13) % 112, 'rgba(255,255,255,0.15)', 2);
@@ -391,9 +458,5 @@ function drawOverlays(c, t) {
 function drawTutorialHand(c, t) {
   const T = G.tut; if (!T || G.mode !== 'play') return;
   const lq = proj(G.lead.x, G.P, 0, SP2);
-  if (T.step === 0 && G.lt < 6.5) drawHand(c, V.cx + Math.sin(t * 2.6) * 70, lq.y + 50, true);
-  else if (T.step === 3) {
-    const d = G.picks.find(p => p.kind === 'debuff');
-    if (d) { const dir = d.x > 0 ? -1 : 1, ph = (t % 1.2) / 1.2; drawHand(c, lq.x + dir * ph * 90, lq.y + 50, true); }
-  }
+  if (G.lt < 6) drawHand(c, V.cx + Math.sin(t * 2.6) * 70, lq.y + 50, true);
 }

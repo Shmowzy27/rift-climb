@@ -1,7 +1,7 @@
 // Optional: lets RIFT CLIMB launch offline from the iPhone Home Screen.
 // Only used when rift-climb.html is served over http(s) with this file beside it.
 // Network first (so updates show up immediately), cached copy when offline.
-const CACHE = 'rift-climb-v2';
+const CACHE = 'rift-climb-v3';
 const PAGE = './rift-climb.html';
 
 self.addEventListener('install', e => {
